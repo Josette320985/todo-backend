@@ -1,0 +1,26 @@
+﻿# Entorno virtual
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variables de entorno
+.env
+
+# Base de datos SQLite
+*.db
+data/
+
+# Pruebas
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

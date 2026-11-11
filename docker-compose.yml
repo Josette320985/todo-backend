@@ -1,0 +1,18 @@
+services:
+  backend:
+    build: .
+    container_name: todo_backend
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+
+  frontend:
+    build: ../todo-frontend
+    container_name: todo_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
