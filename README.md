@@ -1,37 +1,37 @@
-# To-Do List Application — Equipo 1 (Build It)
+# To-Do List Application — Team 1 (Build It)
 
-Aplicación completa de gestión de tareas (To-Do List) construida con **React (Frontend)** y **FastAPI + SQLite (Backend)**. Todo el sistema está dockerizado y orquestado para levantarse con un solo comando.
+A complete task management application (To-Do List) built with **React (Frontend)** and **FastAPI + SQLite (Backend)**. The entire system is containerized and orchestrated using Docker Compose, allowing it to be started with a single command.
 
-Este repositorio contiene el **Backend y la configuración de Docker Compose**. El código del Frontend vive en un repositorio separado.
-
----
-
-## Requisitos previos
-
-Antes de empezar, asegúrate de tener instalado y ejecutándose:
-
-- **Git** (para clonar los repositorios).
-- **Docker Desktop** (con el motor de Docker encendido y en estado "Running").
+This repository contains the **Backend and Docker Compose configuration**. The Frontend source code is maintained in a separate repository.
 
 ---
 
-## 1. Obtener el proyecto (Clonar repositorios)
+## Prerequisites
 
-**IMPORTANTE:** Debido a que el proyecto está dividido en dos repositorios (Frontend y Backend) y usamos Docker Compose para unirlos, **ambos deben ser clonados dentro de la misma carpeta raíz** (deben ser carpetas hermanas).
+Before getting started, make sure you have the following installed and ready:
 
-Abre tu terminal y ejecuta los siguientes comandos:
+- **Git:** Required to clone the repositories.
+- **Docker Desktop:** Must be installed and running, with the Docker engine active.
+
+---
+
+## 1. Get the Project (Clone Repositories)
+
+**IMPORTANT:** Since the project is divided into two repositories (Frontend and Backend), and Docker Compose is used to run them together, **both repositories must be cloned into the same parent directory** (as sibling folders).
+
+Open your terminal and run the following commands:
 
 ```bash
-# 1. Crear una carpeta para el proyecto y entrar en ella
+# 1. Create a project directory and navigate into it
 mkdir equipo1-todo
 cd equipo1-todo
 
-# 2. Clonar ambos repositorios
+# 2. Clone both repositories
 git clone https://github.com/Josette320985/todo-backend.git
 git clone https://github.com/Josette320985/todo-frontend.git
 ```
 
-La estructura de tus carpetas debe verse así:
+Your folder structure should look like this:
 
 ```text
 equipo1-todo/
@@ -41,51 +41,54 @@ equipo1-todo/
 
 ---
 
-## 2. Configurar y ejecutar la aplicación
+## 2. Configure and Run the Application
 
-Una vez clonados los repositorios, sigue estos pasos para levantar el sistema:
+After cloning both repositories, follow these steps to start the system:
 
-**1. Entra a la carpeta del backend:**
+**1. Navigate to the backend directory:**
 
 ```bash
 cd todo-backend
 ```
 
-**2. Crea tu archivo de variables de entorno a partir del ejemplo:**
+**2. Create your environment configuration file from the provided example:**
 
 ```bash
 cp .env.example .env
 ```
 
-*Nota: Puedes abrir el archivo `.env` y cambiar `SECRET_KEY` por cualquier cadena de texto larga y segura.*
+*Note: Open the `.env` file and replace `SECRET_KEY` with a strong, randomly generated secret key of at least 32 characters.*
 
-**3. Construye y levanta los contenedores de Docker (Frontend, Backend y Base de Datos):**
+**3. Build and start the Docker containers (Frontend and Backend):**
 
 ```bash
 docker compose up -d --build
 ```
 
-*Nota: El comando `-d` levanta los servicios en segundo plano. La primera vez tardará un poco porque descarga las imágenes y compila React.*
+*Note: The `-d` flag runs the services in the background. The first execution may take longer because Docker needs to download the base images, install dependencies, and build the React application.*
+
+SQLite is used as the database and does not require a separate database server container.
 
 ---
 
-## 3. Usar la aplicación
+## 3. Use the Application
 
-Una vez que la terminal te devuelva el control, el sistema estará listo. Abre tu navegador web y accede a las siguientes direcciones:
+Once the containers are running and the services are ready, open your web browser and visit the following URLs:
 
--  **Aplicación Web (UI):** http://localhost:3000
-  - Aquí podrás registrarte, iniciar sesión, crear, completar y eliminar tareas.
+- **Web Application (UI):** http://localhost:3000
+  - Register, log in, create, edit, complete, and delete tasks.
 
--  **Documentación de la API (Swagger UI):** http://localhost:3000/api/docs
-  - Aquí podrás probar los endpoints (GET, POST, PUT, DELETE) directamente.
+- **API Documentation (Swagger UI):** http://localhost:3000/api/docs
+  - Explore and test the available API endpoints (GET, POST, PUT, DELETE).
 
--  **Estado del Servidor (Health Check):** http://localhost:3000/api/health
+- **Server Status (Health Check):** http://localhost:3000/api/health
+  - Check whether the API service is responding.
 
 ---
 
-##  4. Detener la aplicación
+## 4. Stop the Application
 
-Cuando termines de usar la aplicación o necesites apagarla, ejecuta el siguiente comando desde la carpeta `todo-backend`:
+When you finish using the application or need to stop the services, run the following command from the `todo-backend` directory:
 
 ```bash
 docker compose down
@@ -93,55 +96,55 @@ docker compose down
 
 ---
 
-## 5. Estructura y explicación de archivos
+## 5. Project Structure and File Descriptions
 
-### Archivos en la raíz
+### Root Files
 
-| Archivo | Descripción |
+| File | Description |
 |---|---|
-| `Dockerfile` | Define la imagen de Python 3.14, instala las dependencias y configura Uvicorn para correr la API. |
-| `docker-compose.yml` | Orquesta el backend y el frontend. Expone el frontend en el puerto 3000 y crea la red interna para que Nginx se comunique con FastAPI. |
-| `requirements.txt` | Lista las librerías de Python (FastAPI, SQLAlchemy, Pytest, entre otras). |
-| `.env.example` | Plantilla de variables de entorno (URL de la BD, clave secreta y tiempo de expiración del token). |
+| `Dockerfile` | Defines the Python 3.14 container image, installs the required dependencies, and configures Uvicorn to run the FastAPI application. |
+| `docker-compose.yml` | Orchestrates the backend and frontend services. Exposes the frontend on port 3000 and provides internal networking so Nginx can communicate with FastAPI. |
+| `requirements.txt` | Lists the Python dependencies required by the project, including FastAPI, SQLAlchemy, and other supporting libraries. |
+| `.env.example` | Template containing the environment variables required by the application, including the database URL, secret key, and JWT expiration time. |
+| `.gitignore` | Specifies files and directories excluded from version control, such as virtual environments, local databases, and sensitive configuration files. |
 
+### `app/` Directory (Source Code)
 
-### Carpeta `app/` (Código fuente)
+- `main.py`: Main application entry point. Configures CORS, initializes database tables, registers API routers, and defines the health-check endpoint.
 
-- `main.py`: Punto de entrada de la aplicación. Configura CORS, inicializa la base de datos (crea las tablas) y une los routers de la API.
+#### `app/api/` (API Endpoints)
 
-#### `app/api/` (Endpoints)
+- `deps.py`: Shared API dependencies. Contains the `get_current_user()` function, which validates JWT access tokens and retrieves the authenticated user for protected endpoints.
+- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Handles user registration, password verification, and JWT access token generation.
+- `v1/tasks.py`: Task CRUD endpoints. Filters tasks by `owner_id` to ensure users can only access and modify their own tasks.
 
-- `deps.py`: Dependencias compartidas. Contiene la función `get_current_user`, que valida el token JWT en las peticiones protegidas.
-- `v1/auth.py`: Endpoints de autenticación (`/register` y `/login`). Maneja el hashing de contraseñas y la creación de tokens.
-- `v1/tasks.py`: Endpoints del CRUD de tareas. Importante: filtra las tareas por `owner_id` para que un usuario no pueda ver ni editar las tareas de otro.
+#### `app/core/` (Configuration and Security)
 
-#### `app/core/` (Configuración y seguridad)
+- `config.py`: Loads application settings from environment variables using Pydantic Settings.
+- `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
 
-- `config.py`: Lee las variables de entorno utilizando Pydantic.
-- `security.py`: Funciones para proteger contraseñas mediante bcrypt y generar/validar tokens JWT (HS256).
+#### `app/db/` (Database)
 
-#### `app/db/` (Base de datos)
+- `base.py`: Defines the SQLAlchemy declarative base class used by the database models.
+- `session.py`: Configures the asynchronous SQLAlchemy database engine and session factory using SQLite with `aiosqlite`.
 
-- `base.py`: Clase base de SQLAlchemy para los modelos.
-- `session.py`: Configura el motor asíncrono de SQLite (`aiosqlite`) y la sesión de la base de datos.
+#### `app/models/` (SQLAlchemy Models)
 
-#### `app/models/` (Tablas SQLAlchemy)
+- `user.py`: Defines the `users` table, including the user ID, email address, hashed password, and relationship with tasks.
+- `task.py`: Defines the `tasks` table, including the task ID, title, description, completion status, and relationship with its owner.
 
-- `user.py`: Define la tabla `users` (id, email, password y relación con tareas).
-- `task.py`: Define la tabla `tasks` (id, título, descripción, estado y relación con usuario).
+#### `app/schemas/` (Pydantic Validation)
 
-#### `app/schemas/` (Validación Pydantic)
-
-- `user.py`: Valida los datos de entrada y salida para usuarios (por ejemplo, que el email tenga un formato correcto).
-- `task.py`: Valida los datos de entrada y salida para las tareas.
-- `token.py`: Define la estructura de la respuesta del token JWT.
+- `user.py`: Defines schemas for validating user registration data and returning user information without exposing password hashes.
+- `task.py`: Defines schemas for creating, updating, and returning task information.
+- `token.py`: Defines the structure of the JWT authentication response.
 
 ---
 
-## 👥 Equipo de desarrollo
+## 👥 Development Team
 
 - **Elisa Aguilar Valadez**
 - **Josette Nayla Hernández Cazarín**
-- **Erika Reyes González** 
-- **Glafira Rodríguez Esparza** 
+- **Erika Reyes González**
+- **Glafira Rodríguez Esparza**
 - **Janette Valenzuela González**
