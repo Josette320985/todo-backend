@@ -1,26 +1,26 @@
-﻿# Entorno virtual
+# Virtual environments and Python cache files
 .venv/
 venv/
 __pycache__/
 *.pyc
 *.pyo
 
-# Variables de entorno
+# Environment variables
 .env
 
-# Base de datos SQLite
+# SQLite database files
 *.db
 data/
 
-# Pruebas
+# Testing and coverage reports
 .pytest_cache/
 .coverage
 htmlcov/
 
-# IDE
+# IDE configuration files
 .vscode/
 .idea/
 
-# Sistema operativo
+# Operating system files
 .DS_Store
 Thumbs.db
