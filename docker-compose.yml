@@ -1,18 +1,36 @@
+
+# Docker Compose configuration for the To-Do List application.
+# Defines the backend and frontend services.
+
 services:
+  # FastAPI backend service.
   backend:
+    # Build the backend image using the local Dockerfile.
     build: .
     container_name: todo_backend
+
+    # Load environment variables from the .env file.
     env_file:
       - .env
+
+    # Persist SQLite database files on the host.
     volumes:
       - ./data:/app/data
+
+    # Make port 8000 available to other containers on the Docker network.
     expose:
       - "8000"
 
+  # React frontend served through Nginx.
   frontend:
+    # Build the frontend image from the sibling repository.
     build: ../todo-frontend
     container_name: todo_frontend
+
+    # Map host port 3000 to Nginx port 80 inside the container.
     ports:
       - "3000:80"
+
+    # Start the backend service before starting the frontend.
     depends_on:
       - backend
