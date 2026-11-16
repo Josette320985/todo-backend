@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -25,4 +25,4 @@ class UserRead(BaseModel):
     email: EmailStr
 
     # Allow Pydantic to read data from SQLAlchemy model attributes.
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
