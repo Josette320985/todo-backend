@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application source code into the container.
 COPY . .
-
+RUN useradd -m -u 1000 appuser
+USER appuser
 # Document the port used by the FastAPI application.
 EXPOSE 8000
 
