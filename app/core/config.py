@@ -1,3 +1,5 @@
+from typing import Final
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,4 +29,4 @@ class Settings(BaseSettings):
 
 
 # Create a shared application settings instance.
-settings = Settings()
+settings: Final[Settings] = Settings()
