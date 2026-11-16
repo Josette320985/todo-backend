@@ -1,4 +1,6 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Final
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +13,7 @@ from app.models.user import User  # noqa: F401  (registers the model)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     Manage application startup and shutdown.
 
@@ -25,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 
 # Create the FastAPI application and configure API documentation.
-app = FastAPI(
+app: Final[FastAPI] = FastAPI(
     title="To-Do API — Equipo 1",
     lifespan=lifespan,
     docs_url="/api/docs",
@@ -48,7 +50,7 @@ app.include_router(tasks.router, prefix="/api/v1")
 
 
 @app.get("/api/health")
-async def health():
+async def health() -> dict[str, str]:
     """
     Check whether the API service is responding.
 
