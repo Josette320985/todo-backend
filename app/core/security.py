@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Final
 
 from jose import jwt
 from passlib.context import CryptContext
@@ -6,7 +7,7 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 # Configure bcrypt for secure password hashing and verification.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context: Final[CryptContext] = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
@@ -50,10 +51,10 @@ def create_access_token(subject: str) -> str:
         str: Encoded and signed JWT access token.
     """
     # Calculate the expiration timestamp using UTC.
-    expire = datetime.now(timezone.utc) + timedelta(
+    expire: datetime = datetime.now(timezone.utc) + timedelta(
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
     # Define the JWT claims and sign the token.
-    payload = {"sub": subject, "exp": expire}
+    payload: dict[str, str | datetime] = {"sub": subject, "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
