@@ -1,6 +1,7 @@
 from datetime import date
+from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def _check_dates(start: date | None, end: date | None) -> None:
@@ -24,7 +25,7 @@ class TaskCreate(BaseModel):
     end_date: date | None = None
 
     @model_validator(mode="after")
-    def validate_dates(self):
+    def validate_dates(self) -> Self:
         _check_dates(self.start_date, self.end_date)
         return self
 
@@ -44,7 +45,7 @@ class TaskUpdate(BaseModel):
     end_date: date | None = None
 
     @model_validator(mode="after")
-    def validate_dates(self):
+    def validate_dates(self) -> Self:
         _check_dates(self.start_date, self.end_date)
         return self
 
@@ -65,4 +66,4 @@ class TaskRead(BaseModel):
     end_date: date | None
 
     # Allow Pydantic to read data from SQLAlchemy model attributes.
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
