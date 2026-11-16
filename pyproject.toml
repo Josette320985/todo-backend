@@ -1,0 +1,18 @@
+# Project tooling configuration.
+# Currently only used for static type checking with mypy.
+
+[tool.mypy]
+python_version = "3.14"
+files = ["app"]
+strict = true
+warn_unreachable = true
+pretty = true
+show_error_codes = true
+
+# Pydantic plugin: understands BaseModel/BaseSettings fields and validators.
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
