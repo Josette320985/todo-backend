@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Final
@@ -31,6 +32,9 @@ app: Final[FastAPI] = FastAPI(
     title="To-Do API — Equipo 1",
     lifespan=lifespan,
     docs_url="/api/docs",
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
     openapi_url="/api/openapi.json",
 )
 
