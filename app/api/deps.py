@@ -1,7 +1,9 @@
+from typing import Any, Final
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -10,7 +12,9 @@ from app.models.user import User
 
 # Extract the Bearer token from the Authorization header.
 # The token URL identifies the authentication endpoint.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme: Final[OAuth2PasswordBearer] = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login"
+)
 
 
 async def get_current_user(
@@ -36,7 +40,7 @@ async def get_current_user(
             or the associated user does not exist (401).
     """
     # Define the HTTP 401 response for invalid credentials.
-    credentials_exception = HTTPException(
+    credentials_exception: HTTPException = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales",
         headers={"WWW-Authenticate": "Bearer"},
@@ -44,18 +48,20 @@ async def get_current_user(
 
     # Decode the JWT and extract the user ID from the subject claim.
     try:
-        payload = jwt.decode(
+        payload: dict[str, Any] = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
-        user_id = payload.get("sub")
+        user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
 
     # Retrieve the user associated with the validated token.
-    result = await db.execute(select(User).where(User.id == int(user_id)))
-    user = result.scalar_one_or_none()
+    result: Result[tuple[User]] = await db.execute(
+        select(User).where(User.id == int(user_id))
+    )
+    user: User | None = result.scalar_one_or_none()
 
     # Reject authentication if the user no longer exists.
     if user is None:
