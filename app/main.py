@@ -12,6 +12,11 @@ from app.db.session import engine
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
 
+# Disable API docs in production to reduce enumeration surface.
+_ENV: str = os.getenv("ENVIRONMENT", "development")
+_docs_url: str | None = None if _ENV == "production" else "/api/docs"
+_redoc_url: str | None = None if _ENV == "production" else "/api/redoc"
+_openapi_url: str | None = None if _ENV == "production" else "/api/openapi.json"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -31,11 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app: Final[FastAPI] = FastAPI(
     title="To-Do API — Equipo 1",
     lifespan=lifespan,
-    docs_url="/api/docs",
     docs_url=_docs_url,
     redoc_url=_redoc_url,
     openapi_url=_openapi_url,
-    openapi_url="/api/openapi.json",
 )
 
 # Configure Cross-Origin Resource Sharing (CORS).
