@@ -1,6 +1,9 @@
 
+from collections.abc import Sequence
+from typing import Final
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -10,14 +13,14 @@ from app.models.user import User
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
 
 # Router responsible for authenticated task management.
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+router: Final[APIRouter] = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 @router.get("/", response_model=list[TaskRead])
 async def list_tasks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Sequence[Task]:
     """
     Retrieve all tasks belonging to the authenticated user.
 
@@ -29,7 +32,9 @@ async def list_tasks(
         list[Task]: Tasks owned by the authenticated user.
     """
     # Filter tasks by the authenticated user's ID.
-    result = await db.execute(select(Task).where(Task.owner_id == current_user.id))
+    result: Result[tuple[Task]] = await db.execute(
+        select(Task).where(Task.owner_id == current_user.id)
+    )
     return result.scalars().all()
 
 
@@ -38,7 +43,7 @@ async def create_task(
     payload: TaskCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     """
     Create a new task for the authenticated user.
 
@@ -51,7 +56,7 @@ async def create_task(
         Task: The newly created task.
     """
     # Associate the new task with the authenticated user.
-    task = Task(**payload.model_dump(), owner_id=current_user.id)
+    task: Task = Task(**payload.model_dump(), owner_id=current_user.id)
     db.add(task)
     await db.commit()
     await db.refresh(task)
@@ -64,7 +69,7 @@ async def update_task(
     payload: TaskUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> Task:
     """
     Update an existing task belonging to the authenticated user.
 
@@ -84,10 +89,10 @@ async def update_task(
             by the authenticated user (404).
     """
     # Find the task and verify ownership.
-    result = await db.execute(
+    result: Result[tuple[Task]] = await db.execute(
         select(Task).where(Task.id == task_id, Task.owner_id == current_user.id)
     )
-    task = result.scalar_one_or_none()
+    task: Task | None = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
 
@@ -105,7 +110,7 @@ async def delete_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-):
+) -> None:
     """
     Delete a task belonging to the authenticated user.
 
@@ -122,10 +127,10 @@ async def delete_task(
             by the authenticated user (404).
     """
     # Find the task and verify ownership before deletion.
-    result = await db.execute(
+    result: Result[tuple[Task]] = await db.execute(
         select(Task).where(Task.id == task_id, Task.owner_id == current_user.id)
     )
-    task = result.scalar_one_or_none()
+    task: Task | None = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
 
