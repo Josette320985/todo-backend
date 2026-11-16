@@ -1,7 +1,9 @@
 
+from typing import Final
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, hash_password, verify_password
@@ -11,11 +13,13 @@ from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserRead
 
 # Router responsible for user registration and authentication.
-router = APIRouter(prefix="/auth", tags=["auth"])
+router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
-async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register(
+    payload: UserCreate, db: AsyncSession = Depends(get_db)
+) -> User:
     """
     Register a new user in the database.
 
@@ -33,12 +37,16 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         HTTPException: If the email is already registered (400).
     """
     # Check whether a user with the provided email already exists.
-    existing = await db.execute(select(User).where(User.email == payload.email))
+    existing: Result[tuple[User]] = await db.execute(
+        select(User).where(User.email == payload.email)
+    )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
     # Hash the password before storing the new user.
-    user = User(email=payload.email, hashed_password=hash_password(payload.password))
+    user: User = User(
+        email=payload.email, hashed_password=hash_password(payload.password)
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -49,7 +57,7 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
 async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, str]:
     """
     Authenticate a user and generate a JWT access token.
 
@@ -67,8 +75,10 @@ async def login(
         HTTPException: If the credentials are invalid (401).
     """
     # Retrieve the user associated with the submitted email.
-    result = await db.execute(select(User).where(User.email == form.username))
-    user = result.scalar_one_or_none()
+    result: Result[tuple[User]] = await db.execute(
+        select(User).where(User.email == form.username)
+    )
+    user: User | None = result.scalar_one_or_none()
 
     # Reject invalid credentials.
     if not user or not verify_password(form.password, user.hashed_password):
