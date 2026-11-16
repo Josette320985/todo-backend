@@ -17,6 +17,9 @@ data/
 .coverage
 htmlcov/
 
+# Static type checking cache
+.mypy_cache/
+
 # IDE configuration files
 .vscode/
 .idea/
