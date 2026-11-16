@@ -11,8 +11,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the application source code into the container.
 COPY . .
-RUN useradd -m -u 1000 appuser
+
+# Create a non-root user and grant ownership of the SQLite data directory.
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
 USER appuser
+
 # Document the port used by the FastAPI application.
 EXPOSE 8000
 
