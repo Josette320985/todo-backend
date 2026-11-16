@@ -25,8 +25,8 @@ async def get_current_user(
     Validate a JWT access token and retrieve the authenticated user.
 
     Decodes the token using the configured secret key and algorithm,
-    extracts the user ID from the subject claim, and verifies that
-    the corresponding user exists in the database.
+    requires both 'sub' and 'exp' claims, extracts the integer user ID,
+    and verifies that the corresponding user exists in the database.
 
     Args:
         token (str): JWT access token extracted from the request.
@@ -36,8 +36,8 @@ async def get_current_user(
         User: The authenticated user retrieved from the database.
 
     Raises:
-        HTTPException: If the token is invalid, its subject is missing,
-            or the associated user does not exist (401).
+        HTTPException: If the token is invalid, expired, its subject is
+            missing or malformed, or the associated user does not exist (401).
     """
     # Define the HTTP 401 response for invalid credentials.
     credentials_exception: HTTPException = HTTPException(
@@ -46,20 +46,24 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Decode the JWT and extract the user ID from the subject claim.
+    # Decode the JWT and extract the numeric user ID from the subject claim.
     try:
         payload: dict[str, Any] = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options={"require_sub": True, "require_exp": True},
         )
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
+        raw_sub: Any = payload.get("sub")
+        if not isinstance(raw_sub, str):
             raise credentials_exception
-    except JWTError:
+        parsed_user_id: int = int(raw_sub)
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
 
     # Retrieve the user associated with the validated token.
     result: Result[tuple[User]] = await db.execute(
-        select(User).where(User.id == int(user_id))
+        select(User).where(User.id == parsed_user_id)
     )
     user: User | None = result.scalar_one_or_none()
 
