@@ -1,22 +1,24 @@
-import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+import os
 from typing import Final
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import auth, tasks
+from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
 
 # Disable API docs in production to reduce enumeration surface.
-_ENV: str = os.getenv("ENVIRONMENT", "development")
+_ENV: str = os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
 _docs_url: str | None = None if _ENV == "production" else "/api/docs"
 _redoc_url: str | None = None if _ENV == "production" else "/api/redoc"
 _openapi_url: str | None = None if _ENV == "production" else "/api/openapi.json"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -41,15 +43,29 @@ app: Final[FastAPI] = FastAPI(
     openapi_url=_openapi_url,
 )
 
-# Configure Cross-Origin Resource Sharing (CORS).
-# Allow requests from the specified frontend development origin.
+# Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Attach HTTP security headers to every API response."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 # Register authentication and task management routes.
 app.include_router(auth.router, prefix="/api/v1")
@@ -62,6 +78,6 @@ async def health() -> dict[str, str]:
     Check whether the API service is responding.
 
     Returns:
-        dict: A status message indicating that the API is running.
+        dict[str, str]: A status message indicating that the API is running.
     """
     return {"status": "ok"}
