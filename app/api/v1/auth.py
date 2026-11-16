@@ -1,12 +1,19 @@
+from collections import defaultdict, deque
 import logging
+import time
 from typing import Final
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.token import Token
@@ -14,19 +21,56 @@ from app.schemas.user import UserCreate, UserRead
 
 # Router responsible for user registration and authentication.
 router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
+
 # Structured logger for security-relevant auth events.
 logger: Final[logging.Logger] = logging.getLogger("auth")
+
+# Sliding-window rate-limiting settings per client IP.
+RATE_LIMIT_WINDOW_SECONDS: Final[float] = 60.0
+MAX_LOGIN_ATTEMPTS_PER_WINDOW: Final[int] = 10
+MAX_REGISTER_ATTEMPTS_PER_WINDOW: Final[int] = 5
+
+_rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _sanitize_for_log(value: str, max_len: int = 120) -> str:
+    """Strip CR/LF control characters and truncate user input before logging."""
+    cleaned: str = value.replace("\r", "\\r").replace("\n", "\\n")
+    return cleaned[:max_len]
+
+
+def _enforce_rate_limit(key: str, max_attempts: int) -> None:
+    """
+    Enforce a sliding-window rate limit for the given key.
+
+    Raises HTTP 429 Too Many Requests when the limit is exceeded.
+    """
+    now: float = time.monotonic()
+    bucket: deque[float] = _rate_limit_buckets[key]
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= max_attempts:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos. Intenta de nuevo en un minuto.",
+        )
+    bucket.append(now)
+
+
 @router.post("/register", response_model=UserRead, status_code=201)
 async def register(
-    payload: UserCreate, db: AsyncSession = Depends(get_db)
+    request: Request,
+    payload: UserCreate,
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """
     Register a new user in the database.
 
-    Checks whether the email is already registered, hashes the
-    provided password, and stores the new user.
+    Enforces rate limiting, checks whether the email is already registered,
+    hashes the provided password, and stores the new user.
 
     Args:
+        request (Request): Incoming HTTP request (used for rate limiting).
         payload (UserCreate): User registration data.
         db (AsyncSession): Asynchronous database session.
 
@@ -34,8 +78,14 @@ async def register(
         User: The newly created user.
 
     Raises:
-        HTTPException: If the email is already registered (400).
+        HTTPException: If rate limit is exceeded (429) or the email is
+            already registered (400).
     """
+    client_ip: str = request.client.host if request.client else "unknown"
+    _enforce_rate_limit(
+        f"register:{client_ip}", MAX_REGISTER_ATTEMPTS_PER_WINDOW
+    )
+
     # Check whether a user with the provided email already exists.
     existing: Result[tuple[User]] = await db.execute(
         select(User).where(User.email == payload.email)
@@ -62,33 +112,48 @@ async def login(
     """
     Authenticate a user and generate a JWT access token.
 
-    Retrieves the user by email, verifies the submitted password,
-    and creates an access token after successful authentication.
+    Enforces rate limiting, retrieves the user by normalized email,
+    verifies the submitted password in constant-ish time (using a dummy
+    bcrypt hash when the user does not exist), and creates an access token.
 
     Args:
+        request (Request): Incoming HTTP request.
         form (OAuth2PasswordRequestForm): Login credentials.
         db (AsyncSession): Asynchronous database session.
 
     Returns:
-        dict: JWT access token and token type.
+        dict[str, str]: JWT access token and token type.
 
     Raises:
-        HTTPException: If the credentials are invalid (401).
+        HTTPException: If rate limit is exceeded (429) or credentials are
+            invalid (401).
     """
+    client_ip: str = request.client.host if request.client else "unknown"
+    _enforce_rate_limit(f"login:{client_ip}", MAX_LOGIN_ATTEMPTS_PER_WINDOW)
+
+    normalized_email: str = form.username.strip().lower()
+
     # Retrieve the user associated with the submitted email.
     result: Result[tuple[User]] = await db.execute(
-        select(User).where(User.email == form.username)
+        select(User).where(User.email == normalized_email)
     )
     user: User | None = result.scalar_one_or_none()
 
-    if not user or not verify_password(form.password, user.hashed_password):
-        client_ip: str = request.client.host if request.client else "unknown"
+    if user is None:
+        # Run a dummy bcrypt verification to prevent user enumeration by timing.
+        verify_password(form.password, DUMMY_PASSWORD_HASH)
+        is_valid: bool = False
+    else:
+        is_valid = verify_password(form.password, user.hashed_password)
+
+    if not is_valid or user is None:
         logger.warning(
             "Failed login attempt | email=%s ip=%s",
-            form.username,
-            client_ip,
+            _sanitize_for_log(form.username),
+            _sanitize_for_log(client_ip),
         )
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
     # Generate and return the JWT access token.
     return {
         "access_token": create_access_token(str(user.id)),
