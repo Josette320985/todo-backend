@@ -1,0 +1,11 @@
+# Development-only dependencies (static type checking).
+# Includes the runtime dependencies so a single install is enough:
+#   pip install -r requirements-dev.txt
+-r requirements.txt
+
+# Static type checker (configured in pyproject.toml).
+mypy==1.*
+
+# Type stubs for third-party libraries that do not ship their own types.
+types-python-jose==3.3.*
+types-passlib==1.7.*
