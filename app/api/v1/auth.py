@@ -1,7 +1,7 @@
-
+import logging
 from typing import Final
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +14,8 @@ from app.schemas.user import UserCreate, UserRead
 
 # Router responsible for user registration and authentication.
 router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
-
-
+# Structured logger for security-relevant auth events.
+logger: Final[logging.Logger] = logging.getLogger("auth")
 @router.post("/register", response_model=UserRead, status_code=201)
 async def register(
     payload: UserCreate, db: AsyncSession = Depends(get_db)
@@ -55,6 +55,7 @@ async def register(
 
 @router.post("/login", response_model=Token)
 async def login(
+    request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
@@ -80,10 +81,14 @@ async def login(
     )
     user: User | None = result.scalar_one_or_none()
 
-    # Reject invalid credentials.
     if not user or not verify_password(form.password, user.hashed_password):
+        client_ip: str = request.client.host if request.client else "unknown"
+        logger.warning(
+            "Failed login attempt | email=%s ip=%s",
+            form.username,
+            client_ip,
+        )
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
-
     # Generate and return the JWT access token.
     return {
         "access_token": create_access_token(str(user.id)),
