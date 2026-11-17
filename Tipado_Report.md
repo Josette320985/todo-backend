@@ -33,3 +33,20 @@
 | src/main.tsx y index.html | Migrado el punto de entrada a `.tsx` y actualizado el `<script>` en `index.html`. |
 | src/App.tsx | Migrado de `.jsx` a `.tsx` con `JSX.Element`, estado booleano y handler `logout: () => void`. |
 | eslint.config.js | Habilitado `typescript-eslint` para archivos `.ts` y `.tsx`. |
+
+
+# Qué sí arreglamos alrededor de localStorage (defensa en profundidad)
+
+## 1. Bloqueo de ejecución de scripts externos con Content-Security-Policy (CSP):
+### El único vector por el cual un atacante puede leer localStorage.getItem('token') es logrando ejecutar JavaScript malicioso (XSS).
+### En nginx.conf agregamos Content-Security-Policy: default-src 'self'; script-src 'self'; ..., lo que bloquea cualquier script inline (<script>...</script>, onerror=...) o script externo que intente robar localStorage.
+
+## 2. Escapado automático en React + Validación estricta en Backend:
+### Verificamos que en ningún componente se use dangerouslySetInnerHTML ni innerHTML, y limitamos longitudes y tipos en Pydantic (TaskCreate, TaskUpdate).
+
+## 3. Purga automática ante 401 Unauthorized:
+### Antes, si el token expiraba o era inválido, se quedaba guardado para siempre en localStorage y la pantalla seguía "adentro".
+### En client.ts y App.tsx agregamos un interceptor de respuesta que, al primer 401, borra inmediatamente localStorage.removeItem('token') y expulsa al usuario al login.
+
+## 4. Expiración corta y obligatoria en el servidor (exp + iat):
+### En deps.py exigimos options={"require_sub": True, "require_exp": True} (30 minutos), por lo que un token robado no tiene validez indefinida.
