@@ -1,5 +1,9 @@
-# Project tooling configuration.
-# Currently only used for static type checking with mypy.
+# Project tooling configuration (mypy and pytest).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.mypy]
 python_version = "3.14"
