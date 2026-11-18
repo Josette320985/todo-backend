@@ -1,4 +1,4 @@
-from typing import Final, Literal
+from typing import ClassVar, Final, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,13 +35,30 @@ class Settings(BaseSettings):
         "http://localhost:8080",
     ]
 
+    # Public placeholder values that must never reach a running deployment.
+    _KNOWN_PLACEHOLDERS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "reemplaza-esta-clave-por-una-larga-y-aleatoria-de-al-menos-32-caracteres",
+        }
+    )
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, value: str) -> str:
         stripped: str = value.strip()
         if len(stripped) < 32:
             raise ValueError(
-                "SECRET_KEY debe tener al menos 32 caracteres no vacíos"
+                "SECRET_KEY debe tener al menos 32 caracteres no vacíos; "
+                "genere uno con secrets.token_urlsafe(48)"
+            )
+        if (
+            stripped in cls._KNOWN_PLACEHOLDERS
+            or "reemplaza" in stripped.lower()
+            or len(set(stripped)) < 16
+        ):
+            raise ValueError(
+                "SECRET_KEY es un valor de ejemplo o débil; "
+                "genere uno con secrets.token_urlsafe(48)"
             )
         return stripped
 
