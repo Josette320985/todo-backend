@@ -26,3 +26,8 @@ finding ID and the team member block (P1-P8) responsible for it.
 
 - SEG-H07: `tests/test_api_docs.py` covers docs exposure per environment and
   checks that the docs routes return 404 outside development (P3).
+
+### Changed
+
+- `.env.example` explains which `ENVIRONMENT` values publish the API docs
+  (SEG-H07, P3).
