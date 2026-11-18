@@ -94,6 +94,17 @@ When you finish using the application or need to stop the services, run the foll
 docker compose down
 ```
 
+### Run the tests
+
+The tests use a temporary SQLite database and a random `SECRET_KEY`, so they never touch `.env` or `data/todo.db`:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Shared fixtures live in `tests/conftest.py`: `client` (in-process `httpx.AsyncClient`), `auth_headers` (registered user's Bearer header) and the `login()` helper.
+
 ---
 
 ## 5. Project Structure and File Descriptions
