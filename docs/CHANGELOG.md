@@ -13,3 +13,8 @@ finding ID and the team member block (P1-P8) responsible for it.
   documentation change in every commit that touches code (P3).
 - `commit-rules` GitHub Actions workflow that runs the same checks on every
   pull request (P3).
+
+### Security
+
+- SEG-H01: `.dockerignore` keeps `.env`, `.git`, the SQLite database and
+  local caches out of the backend image (P3).

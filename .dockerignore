@@ -1,0 +1,32 @@
+# Files kept out of the backend image build context (SEG-H01).
+# The Dockerfile runs "COPY . .", so anything not listed here ends up in /app.
+
+# Secrets: the real .env is injected at runtime by docker-compose (env_file).
+.env
+.env.*
+!.env.example
+
+# SQLite data (emails and password hashes). Mounted as a volume at runtime.
+data/
+*.db
+
+# Version control and repository tooling.
+.git
+.gitattributes
+.githooks/
+.github/
+
+# Local Python environments and caches.
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov/
+
+# Not needed to run the API.
+tests/
+docs/
