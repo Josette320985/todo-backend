@@ -14,11 +14,22 @@ from app.db.session import engine
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
 
-# Disable API docs in production to reduce enumeration surface.
+def api_docs_urls(env: str) -> tuple[str | None, str | None, str | None]:
+    """
+    Return the (docs, redoc, openapi) URLs for the given environment.
+
+    The API docs are only published when the environment is
+    "development" (case-insensitive). Any other value, including typos
+    or an empty string, disables them (fail-closed), to reduce the
+    enumeration surface outside local development (SEG-H07).
+    """
+    if env.strip().lower() == "development":
+        return "/api/docs", "/api/redoc", "/api/openapi.json"
+    return None, None, None
+
+
 _ENV: str = os.getenv("ENVIRONMENT", settings.ENVIRONMENT)
-_docs_url: str | None = None if _ENV == "production" else "/api/docs"
-_redoc_url: str | None = None if _ENV == "production" else "/api/redoc"
-_openapi_url: str | None = None if _ENV == "production" else "/api/openapi.json"
+_docs_url, _redoc_url, _openapi_url = api_docs_urls(_ENV)
 
 
 @asynccontextmanager

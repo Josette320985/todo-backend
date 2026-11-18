@@ -18,3 +18,6 @@ finding ID and the team member block (P1-P8) responsible for it.
 
 - SEG-H01: `.dockerignore` keeps `.env`, `.git`, the SQLite database and
   local caches out of the backend image (P3).
+- SEG-H07: API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are
+  only published when `ENVIRONMENT` is `development`, compared
+  case-insensitively. Any other value disables them (P3).
