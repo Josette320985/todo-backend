@@ -21,3 +21,8 @@ finding ID and the team member block (P1-P8) responsible for it.
 - SEG-H07: API docs (`/api/docs`, `/api/redoc`, `/api/openapi.json`) are
   only published when `ENVIRONMENT` is `development`, compared
   case-insensitively. Any other value disables them (P3).
+
+### Tests
+
+- SEG-H07: `tests/test_api_docs.py` covers docs exposure per environment and
+  checks that the docs routes return 404 outside development (P3).
