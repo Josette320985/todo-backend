@@ -34,9 +34,8 @@ _rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
 
 
 def _sanitize_for_log(value: str, max_len: int = 120) -> str:
-    """Strip CR/LF control characters and truncate user input before logging."""
-    cleaned: str = value.replace("\r", "\\r").replace("\n", "\\n")
-    return cleaned[:max_len]
+    """Escape control/non-ASCII characters (CR/LF, ANSI, U+2028...) and truncate."""
+    return value.encode("unicode_escape").decode("ascii")[:max_len]
 
 
 def _enforce_rate_limit(key: str, max_attempts: int) -> None:
