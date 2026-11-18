@@ -28,8 +28,11 @@ services:
     container_name: todo_frontend
 
     # Map host port 3000 to Nginx port 80 inside the container.
+    # Bound to 127.0.0.1 so the plain-HTTP app is only reachable from this
+    # machine (SEG-H13). Deployments must put a TLS proxy in front; see
+    # docs/deployment.md.
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
 
     # Start the backend service before starting the frontend.
     depends_on:

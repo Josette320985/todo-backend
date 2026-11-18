@@ -31,3 +31,6 @@ finding ID and the team member block (P1-P8) responsible for it.
 
 - `.env.example` explains which `ENVIRONMENT` values publish the API docs
   (SEG-H07, P3).
+- `docker-compose.yml` publishes the frontend on `127.0.0.1:3000` instead of
+  every interface, so the plain-HTTP app is not exposed to the network
+  (SEG-H13, P3).
