@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -158,3 +159,13 @@ async def login(
         "access_token": create_access_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Revoke every token issued to the current user (all sessions)."""
+    user.token_version += 1
+    await db.commit()
