@@ -44,10 +44,11 @@ app: Final[FastAPI] = FastAPI(
 )
 
 # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
+# Credentials are disabled: auth uses a Bearer header, not cookies.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
