@@ -1,0 +1,7 @@
+^app/
+^tests/
+^Dockerfile$
+^docker-compose\.ya?ml$
+^\.dockerignore$
+^requirements[^/]*\.txt$
+^pyproject\.toml$
