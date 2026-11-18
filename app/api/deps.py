@@ -67,8 +67,8 @@ async def get_current_user(
     )
     user: User | None = result.scalar_one_or_none()
 
-    # Reject authentication if the user no longer exists.
-    if user is None:
+    # Reject if the user no longer exists or the token was revoked (logout).
+    if user is None or payload.get("ver") != user.token_version:
         raise credentials_exception
 
     return user

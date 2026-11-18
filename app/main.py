@@ -5,6 +5,7 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import Connection, inspect, text
 
 from app.api.v1 import auth, tasks
 from app.core.config import settings
@@ -31,7 +32,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Initialize database tables when the application starts.
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(add_token_version_column)
     yield
+
+
+def add_token_version_column(conn: Connection) -> None:
+    """Add users.token_version to databases created before it existed."""
+    columns = {col["name"] for col in inspect(conn).get_columns("users")}
+    if "token_version" not in columns:
+        conn.execute(text(
+            "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"
+        ))
 
 
 # Create the FastAPI application and configure API documentation.

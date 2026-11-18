@@ -155,6 +155,6 @@ async def login(
 
     # Generate and return the JWT access token.
     return {
-        "access_token": create_access_token(str(user.id)),
+        "access_token": create_access_token(str(user.id), user.token_version),
         "token_type": "bearer",
     }

@@ -59,15 +59,17 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, version: int) -> str:
     """
     Generate a signed JWT access token for authentication.
 
-    The token includes the subject identifier, issued-at timestamp,
-    and an expiration timestamp based on the configured token lifetime.
+    The token includes the subject identifier, the user's token version,
+    issued-at timestamp, and an expiration timestamp based on the
+    configured token lifetime.
 
     Args:
         subject (str): Identifier stored in the JWT subject claim.
+        version (int): User's current token_version, stored in "ver".
 
     Returns:
         str: Encoded and signed JWT access token.
@@ -78,8 +80,9 @@ def create_access_token(subject: str) -> str:
     )
 
     # Define the JWT claims and sign the token.
-    payload: dict[str, str | datetime] = {
+    payload: dict[str, str | int | datetime] = {
         "sub": subject,
+        "ver": version,
         "iat": now,
         "exp": expire,
     }
