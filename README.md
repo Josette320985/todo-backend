@@ -100,14 +100,27 @@ docker compose down
 
 ### Run the tests
 
-The tests use a temporary SQLite database and a random `SECRET_KEY`, so they never touch `.env` or `data/todo.db`:
+Every test builds its own app with `create_app(settings)`: a temporary SQLite database, a random `SECRET_KEY` and the minimum bcrypt cost (`BCRYPT_ROUNDS=4`), so tests never touch `.env` or `data/todo.db` and the whole suite runs in seconds:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+pytest                      # everything
+pytest -m "not slow"        # what the CI runs on every push
+pytest tests/security       # security regression suite
 ```
 
-Shared fixtures live in `tests/conftest.py`: `client` (in-process `httpx.AsyncClient`), `auth_headers` (registered user's Bearer header) and the `login()` helper.
+Shared fixtures live in `tests/conftest.py`:
+
+| Fixture | What it gives you |
+|---|---|
+| `settings`, `app` | The test settings and the app built from them. |
+| `client` | In-process `httpx.AsyncClient`, inside the app lifespan. |
+| `make_user(email)` | Registers and logs in a user; returns a `TestUser` (`id`, `email`, `token`, `headers`). |
+| `user`, `auth_headers` | The default user and its Bearer header. |
+| `other_user` | A second user, to test access to someone else's data. |
+| `count_queries` | List of the SQL statements the app executed (call `.clear()` before the request you measure). |
+
+Mark long-running tests with `@pytest.mark.slow`. Security tests and their checklist live in `tests/security/`.
 
 ---
 
