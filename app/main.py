@@ -94,8 +94,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await engine.dispose()
 
-    # Disable API docs in production to reduce enumeration surface.
-    docs_enabled: bool = app_settings.ENVIRONMENT != "production"
+    # API docs only in development (SEG-H07). Allow-list instead of
+    # `!= "production"`: "Production", a typo or any other value keeps the
+    # schema, Swagger and ReDoc closed instead of exposing them.
+    docs_enabled: bool = app_settings.ENVIRONMENT.strip().lower() == "development"
 
     app = FastAPI(
         title="To-Do API — Equipo 1",

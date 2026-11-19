@@ -46,7 +46,7 @@ belong to the E2E suite (TEST-09) or the CI (TEST-10).
 | SEG-H04 | `pip-audit` clean; JWT tests still pass | P4 | [ ] pending (`pip-audit` in CI, TEST-10) |
 | SEG-H05 | A simulated `IntegrityError` gets 400 | P6 | [ ] pending |
 | SEG-H06 | `PUT /api/v1/tasks/99999999999999999999` gets 422 | P6 | [ ] pending |
-| SEG-H07 | `/api/openapi.json` gets 404 with `ENVIRONMENT=production` | P3 | [ ] pending |
+| SEG-H07 | `/api/openapi.json` gets 404 with `ENVIRONMENT=production` | P3 | [x] `test_api_docs.py::test_docs_are_404_outside_development`, `test_docs_are_served_in_development` |
 | SEG-H08 | A login with `\x1b[31m` in the email is logged escaped | P8 | [x] `tests/test_log_sanitization.py::test_failed_login_logs_escaped_email` |
 | SEG-H09 | A user registered with a Unicode email can log in | P6 | [ ] pending |
 | SEG-H10 | After logout, the previous token gets 401 | P8 | [x] `tests/test_logout.py::test_logout_revokes_previous_token`, `tests/test_token_version.py` |

@@ -83,7 +83,8 @@ Once the containers are running and the services are ready, open your web browse
   - Register, log in, create, edit, complete, and delete tasks.
 
 - **API Documentation (Swagger UI):** http://localhost:3000/api/docs
-  - Explore and test the available API endpoints (GET, POST, PUT, DELETE).
+  - Only with `ENVIRONMENT=development` in `.env`; the default (`production`) answers 404 so the API schema is not public (SEG-H07).
+  - Behind Nginx the Content-Security-Policy blocks the CDN that Swagger UI and ReDoc load from, so the page stays blank; `/api/openapi.json` works. To use the interactive UI, run the backend directly (`uvicorn app.main:app --reload`) and open http://localhost:8000/api/docs.
 
 - **Server Status (Health Check):** http://localhost:3000/api/health
   - Check whether the API service is responding.
