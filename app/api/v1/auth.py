@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import Settings, get_settings
 from app.core.security import (
-    DUMMY_PASSWORD_HASH,
     create_access_token,
+    dummy_password_hash,
     hash_password,
     verify_password,
 )
@@ -63,6 +63,7 @@ async def register(
     request: Request,
     payload: UserCreate,
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> User:
     """
     Register a new user in the database.
@@ -74,6 +75,7 @@ async def register(
         request (Request): Incoming HTTP request (used for rate limiting).
         payload (UserCreate): User registration data.
         db (AsyncSession): Asynchronous database session.
+        settings (Settings): Settings of the app handling the request.
 
     Returns:
         User: The newly created user.
@@ -96,7 +98,8 @@ async def register(
 
     # Hash the password before storing the new user.
     user: User = User(
-        email=payload.email, hashed_password=hash_password(payload.password)
+        email=payload.email,
+        hashed_password=hash_password(payload.password, settings.BCRYPT_ROUNDS),
     )
     db.add(user)
     await db.commit()
@@ -144,7 +147,9 @@ async def login(
 
     if user is None:
         # Run a dummy bcrypt verification to prevent user enumeration by timing.
-        verify_password(form.password, DUMMY_PASSWORD_HASH)
+        verify_password(
+            form.password, dummy_password_hash(settings.BCRYPT_ROUNDS)
+        )
         is_valid: bool = False
     else:
         is_valid = verify_password(form.password, user.hashed_password)

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import Final
 
 import bcrypt
@@ -9,19 +10,27 @@ from app.core.config import Settings
 # Maximum password length supported by bcrypt (72 UTF-8 bytes).
 MAX_BCRYPT_PASSWORD_BYTES: Final[int] = 72
 
-# Precomputed dummy bcrypt hash used to equalize login response time
-# when the requested email does not exist (mitigates timing attacks).
-DUMMY_PASSWORD_HASH: Final[str] = bcrypt.hashpw(
-    b"dummy-timing-defense-password", bcrypt.gensalt()
-).decode("utf-8")
+@lru_cache
+def dummy_password_hash(rounds: int) -> str:
+    """
+    Return a dummy bcrypt hash with the given cost, computed once per cost.
+
+    Login verifies against it when the email does not exist, so the
+    response takes as long as for a real user (mitigates timing attacks).
+    It must use the same rounds as real password hashes.
+    """
+    return bcrypt.hashpw(
+        b"dummy-timing-defense-password", bcrypt.gensalt(rounds)
+    ).decode("utf-8")
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: str, rounds: int) -> str:
     """
     Generate a secure bcrypt hash from a plain-text password.
 
     Args:
         password (str): Plain-text password to hash (max 72 UTF-8 bytes).
+        rounds (int): bcrypt cost factor (Settings.BCRYPT_ROUNDS).
 
     Returns:
         str: Hashed password suitable for database storage.
@@ -32,7 +41,7 @@ def hash_password(password: str) -> str:
     password_bytes: bytes = password.encode("utf-8")
     if len(password_bytes) > MAX_BCRYPT_PASSWORD_BYTES:
         raise ValueError("La contraseña no puede exceder 72 bytes en UTF-8")
-    hashed_bytes: bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt())
+    hashed_bytes: bytes = bcrypt.hashpw(password_bytes, bcrypt.gensalt(rounds))
     return hashed_bytes.decode("utf-8")
 
 
