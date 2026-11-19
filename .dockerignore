@@ -27,3 +27,6 @@ venv
 .mypy_cache
 .coverage
 htmlcov
+
+# E2E suite (TEST-09): runs on the host against the stack, never inside the image.
+e2e/
