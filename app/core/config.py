@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Deployment environment ("development" or "production").
     ENVIRONMENT: str = "development"
 
+    # Minimum level emitted by the application and uvicorn loggers.
+    LOG_LEVEL: str = "INFO"
+
     # Allowed CORS origins for the frontend application.
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
