@@ -7,6 +7,7 @@ from sqlalchemy import Connection, inspect, text
 
 from app.api.v1 import auth, tasks
 from app.core.config import Settings, get_settings
+from app.core.logging import RequestIdMiddleware, configure_logging
 from app.db.base import Base
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
@@ -63,6 +64,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings: Settings = settings if settings is not None else get_settings()
     engine = create_engine(app_settings.DATABASE_URL)
 
+    # Configure logging once per process, before the first record is emitted.
+    configure_logging(app_settings.LOG_LEVEL)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """Create missing tables on startup and close the engine on shutdown."""
@@ -99,6 +103,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type"],
     )
     app.middleware("http")(add_security_headers)
+
+    # Assign, propagate and return the X-Request-ID of every request. Added last
+    # so it wraps the other middlewares: the id reaches the responses they build
+    # and the 500 produced by the error path (ERR-04).
+    app.add_middleware(RequestIdMiddleware)
 
     # Register authentication and task management routes.
     app.include_router(auth.router, prefix="/api/v1")
