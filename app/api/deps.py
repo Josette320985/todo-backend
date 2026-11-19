@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.models.user import User
 
@@ -20,6 +20,7 @@ oauth2_scheme: Final[OAuth2PasswordBearer] = OAuth2PasswordBearer(
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> User:
     """
     Validate a JWT access token and retrieve the authenticated user.
@@ -31,6 +32,7 @@ async def get_current_user(
     Args:
         token (str): JWT access token extracted from the request.
         db (AsyncSession): Asynchronous database session.
+        settings (Settings): Settings of the app handling the request.
 
     Returns:
         User: The authenticated user retrieved from the database.

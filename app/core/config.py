@@ -1,4 +1,5 @@
-from typing import ClassVar, Final, Literal
+from functools import lru_cache
+from typing import ClassVar, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,5 +67,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
-# Create a shared application settings instance.
-settings: Final[Settings] = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    """
+    Return the settings loaded from the environment and the .env file.
+
+    Cached so the environment is read once per process. Endpoints receive
+    settings through Depends(get_settings); create_app() overrides this
+    dependency with the Settings it was given, so tests can build apps
+    with their own configuration without touching environment variables.
+    """
+    return Settings()

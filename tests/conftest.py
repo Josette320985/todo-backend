@@ -22,8 +22,9 @@ import pytest  # noqa: E402
 
 from app.api.v1 import auth  # noqa: E402
 from app.db.base import Base  # noqa: E402
-from app.db.session import engine  # noqa: E402
 from app.main import app  # noqa: E402
+
+engine = app.state.engine
 
 TEST_EMAIL: str = "user@example.com"
 TEST_PASSWORD: str = "password123"

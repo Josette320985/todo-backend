@@ -4,14 +4,15 @@ import httpx
 from jose import jwt
 from sqlalchemy import inspect, text
 
-from app.core.config import settings
-from app.db.session import engine
-from app.main import add_token_version_column
+from app.core.config import get_settings
+from app.main import add_token_version_column, app
+
+engine = app.state.engine
 
 
 def _token(claims: dict[str, object]) -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=5)
-    return jwt.encode({**claims, "exp": exp}, settings.SECRET_KEY, "HS256")
+    return jwt.encode({**claims, "exp": exp}, get_settings().SECRET_KEY, "HS256")
 
 
 async def test_token_without_version_is_401(
