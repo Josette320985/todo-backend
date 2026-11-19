@@ -1,0 +1,54 @@
+# Backend nightly (TEST-10): long-running tests that are too slow for every push.
+# Runs once a day, on every push to main, and on demand (Actions > Run workflow).
+#
+# Note: GitHub only fires "schedule" from the default branch (main), so the
+# daily run starts once this file reaches main. Until then, use "Run workflow"
+# on equipo3.
+name: backend-nightly
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  # 09:00 UTC = 03:00 in Mexico City
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  slow:
+    name: pytest -m slow
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # pytest exits with 5 when no test matches the marker. Until the first
+      # @pytest.mark.slow test lands (TEST-06), that is not a failure.
+      - name: Slow tests
+        run: |
+          set +e
+          pytest -m slow
+          code=$?
+          if [ "$code" -eq 5 ]; then
+            echo "::notice::No tests marked slow yet."
+            exit 0
+          fi
+          exit "$code"
+
+  # E2E with Playwright over docker-compose (TEST-09) goes here as a second
+  # job once the e2e/ suite exists.
