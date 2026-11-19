@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_current_user
 from app.core.config import Settings, get_settings
@@ -96,10 +97,14 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    # Hash the password before storing the new user.
+    # Hash the password before storing the new user. bcrypt is CPU-bound and
+    # blocks for ~0.25 s at the production cost, so it runs in a thread: the
+    # event loop keeps serving other requests meanwhile (SEG-H03).
     user: User = User(
         email=payload.email,
-        hashed_password=hash_password(payload.password, settings.BCRYPT_ROUNDS),
+        hashed_password=await run_in_threadpool(
+            hash_password, payload.password, settings.BCRYPT_ROUNDS
+        ),
     )
     db.add(user)
     await db.commit()
@@ -147,12 +152,20 @@ async def login(
 
     if user is None:
         # Run a dummy bcrypt verification to prevent user enumeration by timing.
-        verify_password(
-            form.password, dummy_password_hash(settings.BCRYPT_ROUNDS)
+        # Both calls go to a thread: the hash is cached, but the first one costs
+        # a full bcrypt run and must not freeze the loop.
+        await run_in_threadpool(
+            verify_password,
+            form.password,
+            await run_in_threadpool(
+                dummy_password_hash, settings.BCRYPT_ROUNDS
+            ),
         )
         is_valid: bool = False
     else:
-        is_valid = verify_password(form.password, user.hashed_password)
+        is_valid = await run_in_threadpool(
+            verify_password, form.password, user.hashed_password
+        )
 
     if not is_valid or user is None:
         logger.warning(
