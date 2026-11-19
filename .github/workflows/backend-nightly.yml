@@ -50,5 +50,54 @@ jobs:
           fi
           exit "$code"
 
-  # E2E with Playwright over docker-compose (TEST-09) goes here as a second
-  # job once the e2e/ suite exists.
+  # E2E with Playwright over the real docker-compose stack (TEST-09).
+  # docker-compose.yml builds the frontend from ../todo-frontend, so both
+  # repositories are checked out as siblings, like in a developer's machine.
+  e2e:
+    name: playwright e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: todo-backend
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/todo-frontend
+          # Same integration branch as the backend when it exists there.
+          ref: ${{ github.ref_name == 'main' && 'main' || 'equipo3' }}
+          path: todo-frontend
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: todo-backend/e2e/package-lock.json
+
+      - name: Install Playwright
+        working-directory: todo-backend/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Type check
+        working-directory: todo-backend/e2e
+        run: npx tsc --noEmit
+
+      # global-setup builds and starts the stack; global-teardown removes it.
+      - name: E2E
+        working-directory: todo-backend/e2e
+        run: npx playwright test
+
+      - name: Stack logs on failure
+        if: failure()
+        working-directory: todo-backend
+        run: docker compose -p todo-e2e -f docker-compose.yml -f e2e/docker-compose.e2e.yml logs --no-color --tail 200 || true
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: todo-backend/e2e/playwright-report/
+          retention-days: 7
