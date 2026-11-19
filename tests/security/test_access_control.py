@@ -9,15 +9,18 @@ in tests/api/test_tasks_api.py (TEST-02).
 
 import httpx
 
-from helpers import create_task, make_user_headers
+from conftest import TestUser
+from helpers import create_task
 
 TASKS = "/api/v1/tasks/"
 
 
 async def test_create_ignores_owner_id_and_id(
-    client: httpx.AsyncClient, auth_headers: dict[str, str]
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    other_user: TestUser,
 ) -> None:
-    other = await make_user_headers(client, "other@example.com")
+    other = other_user.headers
 
     created = await create_task(
         client, auth_headers, title="Mine", owner_id=2, id=12345
@@ -32,9 +35,11 @@ async def test_create_ignores_owner_id_and_id(
 
 
 async def test_update_ignores_owner_id_and_id(
-    client: httpx.AsyncClient, auth_headers: dict[str, str]
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    other_user: TestUser,
 ) -> None:
-    other = await make_user_headers(client, "other@example.com")
+    other = other_user.headers
     task = await create_task(client, auth_headers, title="Mine")
 
     response = await client.put(

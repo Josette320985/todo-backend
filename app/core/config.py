@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # JWT access token expiration time in minutes (1 min to 24 hours).
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=1, le=1440)
 
+    # bcrypt cost factor (2^rounds iterations). 12 in production; tests use
+    # the minimum (4) so hashing does not dominate the suite's run time.
+    BCRYPT_ROUNDS: int = Field(default=12, ge=4, le=31)
+
     # Algorithm used for JWT signing and verification (restricted to HS256).
     ALGORITHM: Literal["HS256"] = "HS256"
 

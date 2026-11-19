@@ -1,56 +1,100 @@
 """
-Shared test fixtures.
+Shared test fixtures (TEST-01).
 
-The environment is configured BEFORE importing the app, because
-`settings` and the database engine are created at import time.
-Each test gets a fresh SQLite file database and a random SECRET_KEY,
-so the real `.env` and `data/todo.db` are never touched.
+Every test builds its own app with create_app(settings) (ARQ-01):
+a fresh SQLite database in tmp_path, a random SECRET_KEY and the minimum
+bcrypt cost. No environment variables are touched and the real `.env`
+and `data/todo.db` are never used.
+
+Fixtures:
+    settings      Settings of the test app.
+    app           The FastAPI app (its lifespan runs inside `client`).
+    client        In-process httpx.AsyncClient for the app.
+    make_user     Factory: register + log in a user, returns a TestUser.
+    user          Default user (TEST_EMAIL); `auth_headers` is its header.
+    other_user    A second user, to test access to someone else's data.
+    count_queries Records the SQL statements the app executes.
 """
 
-import os
 import secrets
-import tempfile
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
-_TMP_DIR: str = tempfile.mkdtemp(prefix="todo-tests-")
-os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TMP_DIR}/test.db"
-os.environ["SECRET_KEY"] = secrets.token_urlsafe(48)
-os.environ["ENVIRONMENT"] = "test"
+import httpx
+import pytest
+from fastapi import FastAPI
+from sqlalchemy import event
 
-import httpx  # noqa: E402
-import pytest  # noqa: E402
-
-from app.api.v1 import auth  # noqa: E402
-from app.db.base import Base  # noqa: E402
-from app.main import app  # noqa: E402
-
-engine = app.state.engine
+from app.api.v1 import auth
+from app.core.config import Settings
+from app.main import create_app
 
 TEST_EMAIL: str = "user@example.com"
+OTHER_EMAIL: str = "other@example.com"
 TEST_PASSWORD: str = "password123"
 
+# Lowest cost bcrypt accepts. Production keeps the default (12).
+TEST_BCRYPT_ROUNDS: int = 4
 
-@pytest.fixture(autouse=True)
-async def _fresh_state() -> AsyncIterator[None]:
-    """Create empty tables and reset rate limits for every test."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    auth._rate_limit_buckets.clear()
-    yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    # Each test runs in its own event loop: drop pooled connections.
-    await engine.dispose()
+
+@dataclass(frozen=True)
+class TestUser:
+    """A registered and logged-in user."""
+
+    __test__ = False  # not a test class, despite the name
+
+    id: int
+    email: str
+    password: str
+    token: str
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"}
+
+
+class QueryLog(list[str]):
+    """SQL statements executed by the app, in order."""
+
+    @property
+    def count(self) -> int:
+        return len(self)
 
 
 @pytest.fixture
-async def client() -> AsyncIterator[httpx.AsyncClient]:
-    """HTTP client that calls the app in-process (no server needed)."""
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as c:
-        yield c
+def settings(tmp_path: Path) -> Settings:
+    """Settings for one test: temporary database, random key, fast bcrypt."""
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        SECRET_KEY=secrets.token_urlsafe(48),
+        DATABASE_URL=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
+        ENVIRONMENT="test",
+        BCRYPT_ROUNDS=TEST_BCRYPT_ROUNDS,
+    )
+
+
+@pytest.fixture
+def app(settings: Settings) -> FastAPI:
+    return create_app(settings)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits() -> None:
+    """The rate limiter is still module-global (ARQ-05 makes it per app)."""
+    auth._rate_limit_buckets.clear()
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """In-process HTTP client, inside the app lifespan (creates the tables)."""
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as c:
+            yield c
 
 
 async def login(
@@ -64,12 +108,63 @@ async def login(
     )
 
 
+MakeUser = Callable[..., Awaitable[TestUser]]
+
+
 @pytest.fixture
-async def auth_headers(client: httpx.AsyncClient) -> dict[str, str]:
-    """Register the default user and return its Authorization header."""
-    await client.post(
-        "/api/v1/auth/register",
-        json={"email": TEST_EMAIL, "password": TEST_PASSWORD},
-    )
-    token: str = (await login(client)).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+def make_user(client: httpx.AsyncClient) -> MakeUser:
+    """Return a factory that registers and logs in a user."""
+
+    async def _make_user(
+        email: str = TEST_EMAIL, password: str = TEST_PASSWORD
+    ) -> TestUser:
+        registered = await client.post(
+            "/api/v1/auth/register", json={"email": email, "password": password}
+        )
+        assert registered.status_code == 201, registered.text
+        logged_in = await login(client, email, password)
+        assert logged_in.status_code == 200, logged_in.text
+        return TestUser(
+            id=registered.json()["id"],
+            email=email,
+            password=password,
+            token=logged_in.json()["access_token"],
+        )
+
+    return _make_user
+
+
+@pytest.fixture
+async def user(make_user: MakeUser) -> TestUser:
+    return await make_user(TEST_EMAIL)
+
+
+@pytest.fixture
+async def other_user(make_user: MakeUser, user: TestUser) -> TestUser:
+    return await make_user(OTHER_EMAIL)
+
+
+@pytest.fixture
+def auth_headers(user: TestUser) -> dict[str, str]:
+    """Authorization header of the default user."""
+    return user.headers
+
+
+@pytest.fixture
+def count_queries(app: FastAPI) -> Iterator[QueryLog]:
+    """
+    Record every SQL statement the app executes (for TEST-06).
+
+    Call `count_queries.clear()` right before the request you measure.
+    """
+    log = QueryLog()
+
+    def _record(
+        conn: Any, cursor: Any, statement: str, *args: Any
+    ) -> None:
+        log.append(statement)
+
+    sync_engine = app.state.engine.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", _record)
+    yield log
+    event.remove(sync_engine, "before_cursor_execute", _record)
