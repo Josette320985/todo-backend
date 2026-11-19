@@ -125,7 +125,7 @@ Shared fixtures live in `tests/conftest.py`: `client` (in-process `httpx.AsyncCl
 
 ### `app/` Directory (Source Code)
 
-- `main.py`: Main application entry point. Configures CORS, initializes database tables, registers API routers, and defines the health-check endpoint.
+- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS and security headers, registers the API routers and the health-check endpoint. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
 
 #### `app/api/` (API Endpoints)
 
@@ -135,13 +135,13 @@ Shared fixtures live in `tests/conftest.py`: `client` (in-process `httpx.AsyncCl
 
 #### `app/core/` (Configuration and Security)
 
-- `config.py`: Loads application settings from environment variables using Pydantic Settings.
+- `config.py`: Loads application settings from environment variables using Pydantic Settings. `get_settings()` (cached) is the FastAPI dependency that endpoints use; `create_app()` overrides it with the settings it receives.
 - `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
 
 #### `app/db/` (Database)
 
 - `base.py`: Defines the SQLAlchemy declarative base class used by the database models.
-- `session.py`: Configures the asynchronous SQLAlchemy database engine and session factory using SQLite with `aiosqlite`.
+- `session.py`: Creates the asynchronous SQLAlchemy engine and session factory (SQLite with `aiosqlite`). `get_db()` opens a session from the factory of the app that received the request.
 
 #### `app/models/` (SQLAlchemy Models)
 
