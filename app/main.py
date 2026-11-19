@@ -1,6 +1,5 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,5 +108,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-# Application instance served by uvicorn (app.main:app).
-app: Final[FastAPI] = create_app()
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> FastAPI:
+    """
+    Provide the uvicorn application (app.main:app) on first access.
+
+    The instance is created lazily, so importing this module (for example
+    to call create_app() in tests) does not require SECRET_KEY or a .env
+    file. uvicorn resolves "app.main:app" with getattr(), which lands here.
+    """
+    global _app
+    if name == "app":
+        if _app is None:
+            _app = create_app()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
