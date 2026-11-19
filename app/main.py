@@ -1,9 +1,11 @@
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import Connection, inspect, text
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1 import auth, tasks
 from app.core.config import Settings, get_settings
@@ -23,17 +25,33 @@ def add_token_version_column(conn: Connection) -> None:
         ))
 
 
-async def add_security_headers(
-    request: Request,
-    call_next: Callable[[Request], Awaitable[Response]],
-) -> Response:
-    """Attach HTTP security headers to every API response."""
-    response: Response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Cache-Control"] = "no-store"
-    return response
+class SecurityHeadersMiddleware:
+    """
+    Add the HTTP security headers to every response.
+
+    Written as a plain ASGI middleware instead of ``@app.middleware("http")``:
+    BaseHTTPMiddleware wraps each request in an extra task and two anyio memory
+    streams, which measurably caps throughput on trivial endpoints.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                headers["X-Content-Type-Options"] = "nosniff"
+                headers["X-Frame-Options"] = "DENY"
+                headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+                headers["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 async def health() -> dict[str, str]:
@@ -102,12 +120,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
-    app.middleware("http")(add_security_headers)
 
-    # Assign, propagate and return the X-Request-ID of every request. Added last
-    # so it wraps the other middlewares: the id reaches the responses they build
-    # and the 500 produced by the error path (ERR-04).
+    # Assign, propagate and return the X-Request-ID of every request (ERR-04).
     app.add_middleware(RequestIdMiddleware)
+
+    # Added last so it is the outermost middleware: the headers also reach the
+    # responses built by the other middlewares, including the 500 of the error
+    # path (PERF-02).
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Register authentication and task management routes.
     app.include_router(auth.router, prefix="/api/v1")
