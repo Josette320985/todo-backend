@@ -38,7 +38,7 @@ belong to the E2E suite (TEST-09) or the CI (TEST-10).
 
 | ID | Acceptance criterion | Owner | Test |
 |---|---|---|---|
-| SEG-01 | `Settings(SECRET_KEY=<example>)` raises `ValidationError`; a token signed with the example key gets 401 | P1 | [ ] pending |
+| SEG-01 | `Settings(SECRET_KEY=<example>)` raises `ValidationError`; a token signed with the example key gets 401 | P1 | [x] `tests/test_config.py::test_rejects_weak_or_example_secret_key`, `test_example_secret_key.py::test_token_signed_with_example_key_is_401` |
 | SEG-02 | After 10 failures from client A, client B logs in; a forged `X-Forwarded-For` does not change the IP | P2 | [ ] pending (E2E, TEST-09) |
 | SEG-H01 | The backend image has no `.env`, `.git` or `data/todo.db` | P3 | [ ] pending (Docker check in CI) |
 | SEG-H02 | A 100 KB POST to `/api/v1/auth/login` gets 413 | P3 | [ ] pending (E2E, TEST-09) |
