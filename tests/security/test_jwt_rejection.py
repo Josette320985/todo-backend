@@ -16,10 +16,13 @@ import httpx
 import pytest
 from jose import jwt
 
-from app.core.config import get_settings
+from app.core.config import Settings
 
 TASKS = "/api/v1/tasks/"
 WRONG_KEY = "another-secret-key-that-is-long-enough-1234567890"
+
+# A token maker receives the app's SECRET_KEY and returns a token.
+TokenMaker = Callable[[str], str]
 
 
 def _claims(**overrides: object) -> dict[str, object]:
@@ -34,8 +37,8 @@ def _claims(**overrides: object) -> dict[str, object]:
     return {key: value for key, value in claims.items() if value is not None}
 
 
-def _sign(claims: dict[str, object], key: str = "", alg: str = "HS256") -> str:
-    return jwt.encode(claims, key or get_settings().SECRET_KEY, algorithm=alg)
+def _sign(claims: dict[str, object], key: str, alg: str = "HS256") -> str:
+    return jwt.encode(claims, key, algorithm=alg)
 
 
 def _b64(data: dict[str, object]) -> str:
@@ -43,20 +46,21 @@ def _b64(data: dict[str, object]) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def _alg_none() -> str:
+def _unix_claims(exp_in_seconds: int) -> dict[str, object]:
     claims = _claims()
-    claims["exp"] = int(datetime.now(timezone.utc).timestamp()) + 300
+    claims["exp"] = int(datetime.now(timezone.utc).timestamp()) + exp_in_seconds
     claims.pop("iat")
-    return f"{_b64({'alg': 'none', 'typ': 'JWT'})}.{_b64(claims)}."
+    return claims
 
 
-def _tampered() -> str:
+def _alg_none(key: str) -> str:
+    return f"{_b64({'alg': 'none', 'typ': 'JWT'})}.{_b64(_unix_claims(300))}."
+
+
+def _tampered(key: str) -> str:
     # Same valid claims with a longer expiry: only the signature is wrong.
-    header, _, signature = _sign(_claims()).split(".")
-    claims = _claims()
-    claims["exp"] = int(datetime.now(timezone.utc).timestamp()) + 3600
-    claims.pop("iat")
-    return f"{header}.{_b64(claims)}.{signature}"
+    header, _, signature = _sign(_claims(), key).split(".")
+    return f"{header}.{_b64(_unix_claims(3600))}.{signature}"
 
 
 def _past() -> datetime:
@@ -67,25 +71,25 @@ def _future() -> datetime:
     return datetime.now(timezone.utc) + timedelta(hours=1)
 
 
-INVALID_TOKENS: dict[str, Callable[[], str]] = {
+INVALID_TOKENS: dict[str, TokenMaker] = {
     "alg-none": _alg_none,
-    "alg-hs512": lambda: _sign(_claims(), alg="HS512"),
-    "wrong-key": lambda: _sign(_claims(), key=WRONG_KEY),
-    "no-exp": lambda: _sign(_claims(exp=None)),
-    "expired": lambda: _sign(_claims(exp=_past())),
-    "no-sub": lambda: _sign(_claims(sub=None)),
-    "non-numeric-sub": lambda: _sign(_claims(sub="abc")),
-    "unknown-user": lambda: _sign(_claims(sub="999")),
-    "nbf-in-future": lambda: _sign(_claims(nbf=_future())),
+    "alg-hs512": lambda key: _sign(_claims(), key, alg="HS512"),
+    "wrong-key": lambda key: _sign(_claims(), WRONG_KEY),
+    "no-exp": lambda key: _sign(_claims(exp=None), key),
+    "expired": lambda key: _sign(_claims(exp=_past()), key),
+    "no-sub": lambda key: _sign(_claims(sub=None), key),
+    "non-numeric-sub": lambda key: _sign(_claims(sub="abc"), key),
+    "unknown-user": lambda key: _sign(_claims(sub="999"), key),
+    "nbf-in-future": lambda key: _sign(_claims(nbf=_future()), key),
     "tampered-payload": _tampered,
-    "not-a-jwt": lambda: "not.a.jwt",
+    "not-a-jwt": lambda key: "not.a.jwt",
 }
 
 
 async def test_valid_token_is_accepted(
-    client: httpx.AsyncClient, auth_headers: dict[str, str]
+    client: httpx.AsyncClient, auth_headers: dict[str, str], settings: Settings
 ) -> None:
-    headers = {"Authorization": f"Bearer {_sign(_claims())}"}
+    headers = {"Authorization": f"Bearer {_sign(_claims(), settings.SECRET_KEY)}"}
     response = await client.get(TASKS, headers=headers)
     assert response.status_code == 200
 
@@ -94,9 +98,10 @@ async def test_valid_token_is_accepted(
 async def test_invalid_token_is_401(
     client: httpx.AsyncClient,
     auth_headers: dict[str, str],
-    make_token: Callable[[], str],
+    settings: Settings,
+    make_token: TokenMaker,
 ) -> None:
-    headers = {"Authorization": f"Bearer {make_token()}"}
+    headers = {"Authorization": f"Bearer {make_token(settings.SECRET_KEY)}"}
 
     response = await client.get(TASKS, headers=headers)
 

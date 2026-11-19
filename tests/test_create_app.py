@@ -25,6 +25,7 @@ def make_settings(db_path: Path, **overrides: object) -> Settings:
         "SECRET_KEY": secrets.token_urlsafe(48),
         "DATABASE_URL": f"sqlite+aiosqlite:///{db_path.as_posix()}",
         "ENVIRONMENT": "test",
+        "BCRYPT_ROUNDS": 4,
         **overrides,
     }
     return Settings(_env_file=None, **values)  # type: ignore[arg-type]

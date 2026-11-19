@@ -11,7 +11,8 @@ is intentional, update the test in the same PR that changes it.
 import httpx
 import pytest
 
-from helpers import create_task, make_user_headers
+from conftest import TestUser
+from helpers import create_task
 
 TASKS = "/api/v1/tasks/"
 
@@ -207,10 +208,12 @@ async def test_delete_twice_is_404(
 
 
 async def test_other_user_cannot_see_update_or_delete(
-    client: httpx.AsyncClient, auth_headers: dict[str, str]
+    client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    other_user: TestUser,
 ) -> None:
     task = await create_task(client, auth_headers, title="Private")
-    other = await make_user_headers(client, "other@example.com")
+    other = other_user.headers
 
     listed = await client.get(TASKS, headers=other)
     updated = await client.put(
