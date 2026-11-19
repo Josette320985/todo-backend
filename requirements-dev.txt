@@ -10,5 +10,11 @@ mypy==1.*
 types-python-jose==3.3.*
 types-passlib==1.7.*
 
+# Test runner and in-process HTTP client (TEST-01). They are also in
+# requirements.txt until SEG-H04 (P4) moves them out of production.
+pytest==8.*
+pytest-asyncio==0.24.*
+httpx==0.28.*
+
 # Coverage report for pytest (used by the CI, TEST-10).
 pytest-cov==6.*
