@@ -57,7 +57,11 @@ cd todo-backend
 cp .env.example .env
 ```
 
-*Note: Open the `.env` file and replace `SECRET_KEY` with a strong, randomly generated secret key of at least 32 characters.*
+*Note: The app refuses to start until `SECRET_KEY` is set. Generate a strong, random secret key into the `.env` file with:*
+
+```bash
+python -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))" >> .env
+```
 
 **3. Build and start the Docker containers (Frontend and Backend):**
 
