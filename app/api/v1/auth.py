@@ -9,6 +9,7 @@ from sqlalchemy import Result, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.config import Settings, get_settings
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -108,6 +109,7 @@ async def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, str]:
     """
     Authenticate a user and generate a JWT access token.
@@ -120,6 +122,7 @@ async def login(
         request (Request): Incoming HTTP request.
         form (OAuth2PasswordRequestForm): Login credentials.
         db (AsyncSession): Asynchronous database session.
+        settings (Settings): Settings of the app handling the request.
 
     Returns:
         dict[str, str]: JWT access token and token type.
@@ -156,7 +159,9 @@ async def login(
 
     # Generate and return the JWT access token.
     return {
-        "access_token": create_access_token(str(user.id), user.token_version),
+        "access_token": create_access_token(
+            str(user.id), user.token_version, settings
+        ),
         "token_type": "bearer",
     }
 

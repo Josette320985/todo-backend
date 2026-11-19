@@ -16,7 +16,7 @@ import httpx
 import pytest
 from jose import jwt
 
-from app.core.config import settings
+from app.core.config import get_settings
 
 TASKS = "/api/v1/tasks/"
 WRONG_KEY = "another-secret-key-that-is-long-enough-1234567890"
@@ -35,7 +35,7 @@ def _claims(**overrides: object) -> dict[str, object]:
 
 
 def _sign(claims: dict[str, object], key: str = "", alg: str = "HS256") -> str:
-    return jwt.encode(claims, key or settings.SECRET_KEY, algorithm=alg)
+    return jwt.encode(claims, key or get_settings().SECRET_KEY, algorithm=alg)
 
 
 def _b64(data: dict[str, object]) -> str:

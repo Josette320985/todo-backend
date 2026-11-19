@@ -4,7 +4,7 @@ from typing import Final
 import bcrypt
 from jose import jwt
 
-from app.core.config import settings
+from app.core.config import Settings
 
 # Maximum password length supported by bcrypt (72 UTF-8 bytes).
 MAX_BCRYPT_PASSWORD_BYTES: Final[int] = 72
@@ -59,7 +59,7 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str, version: int) -> str:
+def create_access_token(subject: str, version: int, settings: Settings) -> str:
     """
     Generate a signed JWT access token for authentication.
 
@@ -70,6 +70,7 @@ def create_access_token(subject: str, version: int) -> str:
     Args:
         subject (str): Identifier stored in the JWT subject claim.
         version (int): User's current token_version, stored in "ver".
+        settings (Settings): App settings (secret key, algorithm, lifetime).
 
     Returns:
         str: Encoded and signed JWT access token.
