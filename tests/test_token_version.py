@@ -6,7 +6,7 @@ from jose import jwt
 from sqlalchemy import inspect, text
 
 from app.core.config import Settings
-from app.main import add_token_version_column
+from app.db.migrations import run_migrations
 
 
 def _token(claims: dict[str, object], settings: Settings) -> str:
@@ -33,13 +33,18 @@ async def test_token_with_wrong_version_is_401(
 
 async def test_migration_adds_column_to_old_db(app: FastAPI) -> None:
     # Empty database (lifespan not run): create the pre-SEG-H10 schema.
+    # Since ARQ-03 the column is added by migration 0002, not by a patch.
     async with app.state.engine.begin() as conn:
         await conn.execute(text(
             "CREATE TABLE users (id INTEGER PRIMARY KEY, email VARCHAR(255),"
             " hashed_password VARCHAR(255))"
         ))
-        await conn.run_sync(add_token_version_column)
-        await conn.run_sync(add_token_version_column)  # idempotent
+        await conn.execute(text(
+            "CREATE TABLE tasks (id INTEGER PRIMARY KEY, title VARCHAR(200),"
+            " owner_id INTEGER REFERENCES users (id))"
+        ))
+        await conn.run_sync(run_migrations)
+        await conn.run_sync(run_migrations)  # idempotent
         columns = await conn.run_sync(
             lambda c: {col["name"] for col in inspect(c).get_columns("users")}
         )
