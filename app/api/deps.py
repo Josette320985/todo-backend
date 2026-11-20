@@ -3,12 +3,10 @@ from typing import Any, Final
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import Result, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.db.session import get_db
 from app.models.user import User
+from app.repositories.user_repository import UserRepository, get_user_repository
 
 # Extract the Bearer token from the Authorization header.
 # The token URL identifies the authentication endpoint.
@@ -19,7 +17,7 @@ oauth2_scheme: Final[OAuth2PasswordBearer] = OAuth2PasswordBearer(
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
     settings: Settings = Depends(get_settings),
 ) -> User:
     """
@@ -31,7 +29,7 @@ async def get_current_user(
 
     Args:
         token (str): JWT access token extracted from the request.
-        db (AsyncSession): Asynchronous database session.
+        users (UserRepository): Data access for users.
         settings (Settings): Settings of the app handling the request.
 
     Returns:
@@ -64,10 +62,7 @@ async def get_current_user(
         raise credentials_exception
 
     # Retrieve the user associated with the validated token.
-    result: Result[tuple[User]] = await db.execute(
-        select(User).where(User.id == parsed_user_id)
-    )
-    user: User | None = result.scalar_one_or_none()
+    user: User | None = await users.get_by_id(parsed_user_id)
 
     # Reject if the user no longer exists or the token was revoked (logout).
     if user is None or payload.get("ver") != user.token_version:

@@ -5,8 +5,6 @@ from typing import Final
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import Result, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_current_user
@@ -17,8 +15,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.db.session import get_db
 from app.models.user import User
+from app.repositories.user_repository import UserRepository, get_user_repository
 from app.schemas.token import Token
 from app.schemas.user import UserCreate, UserRead
 
@@ -63,7 +61,7 @@ def _enforce_rate_limit(key: str, max_attempts: int) -> None:
 async def register(
     request: Request,
     payload: UserCreate,
-    db: AsyncSession = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
     settings: Settings = Depends(get_settings),
 ) -> User:
     """
@@ -75,7 +73,7 @@ async def register(
     Args:
         request (Request): Incoming HTTP request (used for rate limiting).
         payload (UserCreate): User registration data.
-        db (AsyncSession): Asynchronous database session.
+        users (UserRepository): Data access for users.
         settings (Settings): Settings of the app handling the request.
 
     Returns:
@@ -91,10 +89,7 @@ async def register(
     )
 
     # Check whether a user with the provided email already exists.
-    existing: Result[tuple[User]] = await db.execute(
-        select(User).where(User.email == payload.email)
-    )
-    if existing.scalar_one_or_none():
+    if await users.get_by_email(payload.email) is not None:
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
     # Hash the password before storing the new user. bcrypt is CPU-bound and
@@ -106,17 +101,14 @@ async def register(
             hash_password, payload.password, settings.BCRYPT_ROUNDS
         ),
     )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    return user
+    return await users.add(user)
 
 
 @router.post("/login", response_model=Token)
 async def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, str]:
     """
@@ -129,7 +121,7 @@ async def login(
     Args:
         request (Request): Incoming HTTP request.
         form (OAuth2PasswordRequestForm): Login credentials.
-        db (AsyncSession): Asynchronous database session.
+        users (UserRepository): Data access for users.
         settings (Settings): Settings of the app handling the request.
 
     Returns:
@@ -145,10 +137,7 @@ async def login(
     normalized_email: str = form.username.strip().lower()
 
     # Retrieve the user associated with the submitted email.
-    result: Result[tuple[User]] = await db.execute(
-        select(User).where(User.email == normalized_email)
-    )
-    user: User | None = result.scalar_one_or_none()
+    user: User | None = await users.get_by_email(normalized_email)
 
     if user is None:
         # Run a dummy bcrypt verification to prevent user enumeration by timing.
@@ -187,8 +176,8 @@ async def login(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
 ) -> None:
     """Revoke every token issued to the current user (all sessions)."""
     user.token_version += 1
-    await db.commit()
+    await users.add(user)
