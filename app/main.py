@@ -3,26 +3,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Connection, inspect, text
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1 import auth, tasks
 from app.core.config import Settings, get_settings
 from app.core.logging import RequestIdMiddleware, configure_logging
-from app.db.base import Base
+from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
-
-
-def add_token_version_column(conn: Connection) -> None:
-    """Add users.token_version to databases created before it existed."""
-    columns = {col["name"] for col in inspect(conn).get_columns("users")}
-    if "token_version" not in columns:
-        conn.execute(text(
-            "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"
-        ))
 
 
 class SecurityHeadersMiddleware:
@@ -87,10 +77,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Create missing tables on startup and close the engine on shutdown."""
+        """Migrate the database on startup and close the engine on shutdown.
+
+        The schema is owned by the Alembic migrations (ARQ-03): create_all()
+        could create missing tables but never add columns or indexes to
+        existing ones.
+        """
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            await conn.run_sync(add_token_version_column)
+            await conn.run_sync(run_migrations)
         yield
         await engine.dispose()
 
