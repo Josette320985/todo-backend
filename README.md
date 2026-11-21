@@ -89,6 +89,37 @@ Once the containers are running and the services are ready, open your web browse
 - **Server Status (Health Check):** http://localhost:3000/api/health
   - Check whether the API service is responding.
 
+The stack is published only on `127.0.0.1:3000`, so it is reachable from this machine and not from the rest of the network (SEG-H13).
+
+---
+
+## Deploying with HTTPS (required)
+
+Nginx in this stack serves **plain HTTP only**. Without TLS, passwords and JWT tokens travel in clear text, so **any deployment that other people can reach must put an HTTPS proxy in front** (Caddy, Traefik, a cloud load balancer or another Nginx with a certificate). Never change the port mapping to `3000:80` or `0.0.0.0:3000:80` to "publish" the app.
+
+The proxy must:
+
+1. Terminate TLS and forward to `http://127.0.0.1:3000`.
+2. Redirect HTTP (port 80) to HTTPS.
+3. Set (overwrite, not append) `X-Forwarded-Proto: https`. With it, the stack's Nginx adds `Strict-Transport-Security: max-age=31536000` to every response. Without it, HSTS is not sent.
+
+Minimal example with Caddy (automatic certificates):
+
+```caddyfile
+todo.example.com {
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Forwarded-Proto https
+    }
+}
+```
+
+Check after deploying:
+
+```bash
+curl -sI https://todo.example.com/ | grep -i strict-transport-security
+curl -sI http://todo.example.com/  # must be a redirect to https://
+```
+
 ---
 
 ## 4. Stop the Application

@@ -27,9 +27,12 @@ services:
     build: ../todo-frontend
     container_name: todo_frontend
 
-    # Map host port 3000 to Nginx port 80 inside the container.
+    # Publish Nginx only on the loopback interface (SEG-H13). It speaks plain
+    # HTTP, so binding to every interface would let anyone on the network read
+    # passwords and tokens. A real deployment puts a TLS proxy in front (see
+    # "Deploying with HTTPS" in README.md); do not change this to "3000:80".
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
 
     # Start the backend service before starting the frontend.
     depends_on:
