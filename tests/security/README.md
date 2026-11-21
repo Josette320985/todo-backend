@@ -52,6 +52,6 @@ belong to the E2E suite (TEST-09) or the CI (TEST-10).
 | SEG-H10 | After logout, the previous token gets 401 | P8 | [x] `tests/test_logout.py::test_logout_revokes_previous_token`, `tests/test_token_version.py` |
 | SEG-H11 | The browser console does not show `Authorization` | P7 | [ ] pending (frontend, TEST-08) |
 | SEG-H12 | `?limit=1000000` gets 422 or is capped; creating past the cap gets 4xx | P5 | [ ] pending |
-| SEG-H13 | HTTPS requirement documented; local port bound to `127.0.0.1` | P3 | [ ] pending (documentation and compose) |
+| SEG-H13 | HTTPS requirement documented; local port bound to `127.0.0.1` | P3 | [x] README "Deploying with HTTPS", `docker-compose.yml` on `127.0.0.1:3000`; HSTS behind a TLS proxy in `e2e/tests/04-headers-seguridad.spec.ts` (TEST-09) |
 | SEG-H14 | `npm audit` with no high vulnerabilities; build and lint pass | P7 | [ ] pending (CI, TEST-10) |
 | SEG-H15 | CORS without `allow_credentials` | P8 | [x] `tests/test_cors.py::test_allowed_origin_without_credentials` |

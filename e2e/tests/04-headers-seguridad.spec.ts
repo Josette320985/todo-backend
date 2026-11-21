@@ -70,3 +70,34 @@ test.describe('flujo 4 · headers de seguridad', () => {
     expectSecurityHeaders(response);
   });
 });
+
+/**
+ * SEG-H13: HSTS is only sent when a TLS proxy in front says the request was
+ * HTTPS (X-Forwarded-Proto: https). Over plain HTTP it must not appear.
+ */
+test.describe('flujo 4 · HSTS detrás de un proxy TLS (SEG-H13)', () => {
+  async function paths(request: import('@playwright/test').APIRequestContext): Promise<string[]> {
+    const html: string = await (await request.get('/')).text();
+    const asset: string | undefined = html.match(/src="(\/assets\/[^"]+)"/)?.[1];
+    expect(asset, 'index.html enlaza un asset').toBeTruthy();
+    return ['/', '/alguna/ruta/del/cliente', asset as string, '/api/health'];
+  }
+
+  test('sin proxy TLS (HTTP directo) no se envía HSTS', async ({ request }) => {
+    for (const path of await paths(request)) {
+      const response = await request.get(path);
+      expect(response.headers()['strict-transport-security'], path).toBeUndefined();
+    }
+  });
+
+  test('con X-Forwarded-Proto: https se envía HSTS en /, /assets y /api', async ({ request }) => {
+    for (const path of await paths(request)) {
+      const response = await request.get(path, { headers: { 'X-Forwarded-Proto': 'https' } });
+      const hsts: string[] = response
+        .headersArray()
+        .filter((h) => h.name.toLowerCase() === 'strict-transport-security')
+        .map((h) => h.value);
+      expect(hsts, path).toEqual(['max-age=31536000']);
+    }
+  });
+});
