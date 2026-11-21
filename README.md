@@ -87,7 +87,9 @@ Once the containers are running and the services are ready, open your web browse
   - Behind Nginx the Content-Security-Policy blocks the CDN that Swagger UI and ReDoc load from, so the page stays blank; `/api/openapi.json` works. To use the interactive UI, run the backend directly (`uvicorn app.main:app --reload`) and open http://localhost:8000/api/docs.
 
 - **Server Status (Health Check):** http://localhost:3000/api/health
-  - Check whether the API service is responding.
+  - Liveness: the API process is responding. It does not touch the database.
+- **Readiness:** http://localhost:3000/api/health/ready
+  - `200` when the API can reach its database (`SELECT 1` within 2 s), `503` otherwise (ERR-05). Docker Compose uses it as the backend healthcheck, so `docker compose ps` shows `unhealthy` and Nginx does not start while the database is unavailable. The reason is in `docker compose logs backend`.
 
 The stack is published only on `127.0.0.1:3000`, so it is reachable from this machine and not from the rest of the network (SEG-H13).
 
@@ -170,7 +172,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 ### `app/` Directory (Source Code)
 
-- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS and security headers, registers the API routers and the health-check endpoint. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
+- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS and security headers, registers the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
 
 #### `app/api/` (API Endpoints)
 

@@ -1,8 +1,15 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Final
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -13,6 +20,16 @@ from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
+
+logger: Final[logging.Logger] = logging.getLogger("app.health")
+
+# Upper bound for the readiness check (ERR-05). Short enough that a stuck
+# database fails the probe instead of piling up requests behind it.
+READINESS_TIMEOUT_SECONDS: Final[float] = 2.0
+
+# Failures that mean "the database is not usable right now". Anything else
+# (a broken migration script, a bug) still crashes loudly.
+DATABASE_ERRORS: Final = (SQLAlchemyError, OSError)
 
 
 class SecurityHeadersMiddleware:
@@ -44,14 +61,63 @@ class SecurityHeadersMiddleware:
         await self.app(scope, receive, send_with_headers)
 
 
+async def migrate(engine: AsyncEngine) -> None:
+    """Bring the database to the latest Alembic revision (ARQ-03)."""
+    async with engine.begin() as conn:
+        await conn.run_sync(run_migrations)
+
+
 async def health() -> dict[str, str]:
     """
-    Check whether the API service is responding.
+    Liveness: the process is up and serving requests.
+
+    Does not touch the database on purpose, so a database outage does not
+    make an orchestrator restart a process that would recover on its own.
 
     Returns:
         dict[str, str]: A status message indicating that the API is running.
     """
     return {"status": "ok"}
+
+
+async def check_database(app: FastAPI) -> None:
+    """
+    Raise if the database cannot serve requests.
+
+    If the migrations failed at startup (the database was unreachable), they
+    are retried here first, so the app becomes ready on its own as soon as
+    the database is back, without a restart.
+    """
+    if not app.state.migrated:
+        async with app.state.migrate_lock:
+            if not app.state.migrated:
+                await migrate(app.state.engine)
+                app.state.migrated = True
+                logger.info("Database migrated after startup; the API is ready")
+    async with app.state.engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
+
+
+async def ready(request: Request) -> JSONResponse:
+    """
+    Readiness: the API can reach its database (ERR-05).
+
+    Returns 200 when the database answers ``SELECT 1`` within
+    READINESS_TIMEOUT_SECONDS and 503 otherwise. The body never includes the
+    error: details go to the log, which is not public.
+    """
+    try:
+        async with asyncio.timeout(READINESS_TIMEOUT_SECONDS):
+            await check_database(request.app)
+    except TimeoutError:
+        logger.warning(
+            "Readiness check timed out after %.1f s", READINESS_TIMEOUT_SECONDS
+        )
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    except DATABASE_ERRORS as exc:
+        logger.warning("Readiness check failed: %s", type(exc).__name__)
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return JSONResponse({"status": "ok"})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -82,9 +148,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         The schema is owned by the Alembic migrations (ARQ-03): create_all()
         could create missing tables but never add columns or indexes to
         existing ones.
+
+        If the database cannot be opened, the process still starts (ERR-05):
+        /api/health answers 200 and /api/health/ready answers 503, retrying
+        the migrations, until the database is reachable. Crashing instead
+        would leave nothing to report the problem.
         """
-        async with engine.begin() as conn:
-            await conn.run_sync(run_migrations)
+        try:
+            await migrate(engine)
+            app.state.migrated = True
+        except DATABASE_ERRORS:
+            logger.exception(
+                "Database unavailable at startup; /api/health/ready answers "
+                "503 until it is reachable"
+            )
         yield
         await engine.dispose()
 
@@ -105,6 +182,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
+    app.state.migrated = False
+    app.state.migrate_lock = asyncio.Lock()
     app.dependency_overrides[get_settings] = lambda: app_settings
 
     # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
@@ -129,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(tasks.router, prefix="/api/v1")
     app.add_api_route("/api/health", health, methods=["GET"])
+    app.add_api_route("/api/health/ready", ready, methods=["GET"])
 
     return app
 
