@@ -19,3 +19,15 @@ async def test_allowed_origin_without_credentials(client: httpx.AsyncClient) -> 
 async def test_unknown_origin_is_rejected(client: httpx.AsyncClient) -> None:
     response = await _preflight(client, "http://evil.example")
     assert "access-control-allow-origin" not in response.headers
+
+
+async def test_patch_preflight_is_allowed(client: httpx.AsyncClient) -> None:
+    response = await client.options(
+        "/api/v1/tasks/1",
+        headers={
+            "Origin": ALLOWED_ORIGIN,
+            "Access-Control-Request-Method": "PATCH",
+        },
+    )
+
+    assert "PATCH" in response.headers["access-control-allow-methods"]

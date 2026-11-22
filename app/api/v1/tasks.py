@@ -56,7 +56,13 @@ async def create_task(
     return await service.create_task(current_user.id, payload)
 
 
-@router.put("/{task_id}", response_model=TaskRead)
+@router.patch("/{task_id}", response_model=TaskRead, operation_id="patch_task")
+@router.put(
+    "/{task_id}",
+    response_model=TaskRead,
+    operation_id="put_task",
+    deprecated=True,
+)
 async def update_task(
     task_id: TaskId,
     payload: TaskUpdate,
@@ -64,7 +70,10 @@ async def update_task(
     current_user: User = Depends(get_current_user),
 ) -> Task:
     """
-    Update an existing task belonging to the authenticated user.
+    Apply a partial update to a task belonging to the authenticated user.
+
+    PATCH is the canonical method. PUT remains a deprecated alias until the
+    frontend migrates; both run the same TaskService use case.
 
     Only allowlisted fields explicitly provided in the request are updated,
     and the resulting start/end date range is validated against existing values.

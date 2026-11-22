@@ -172,13 +172,13 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 ### `app/` Directory (Source Code)
 
-- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS and security headers, registers the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
+- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) and security headers, registers the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
 
 #### `app/api/` (API Endpoints)
 
 - `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
-- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token. A duplicate email answers an explicit 400 (SEG-H05 accepts enumeration on registration; login stays generic). The login username uses the same email normalization as registration (SEG-H09).
-- `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks. Task ids are bounded to SQLite's signed 64-bit range (`1` to `2**63 - 1`), so an oversized id answers 422 instead of 500.
+- `v1/auth.py`: Authentication endpoints (`/register`, `/login` and `/me`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token. `GET /me` returns `UserRead` for the authenticated user (UX-14). A duplicate email answers an explicit 400 (SEG-H05 accepts enumeration on registration; login stays generic). The login username uses the same email normalization as registration (SEG-H09).
+- `v1/tasks.py`: Task CRUD endpoints. `PATCH /tasks/{id}` is the canonical partial update; `PUT` remains a deprecated alias until the frontend migrates (ARQ-09). Both delegate the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks. Task ids are bounded to SQLite's signed 64-bit range (`1` to `2**63 - 1`), so an oversized id answers 422 instead of 500.
 
 #### `app/core/` (Configuration and Security)
 
