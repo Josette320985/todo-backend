@@ -55,10 +55,8 @@ jobs:
     name: pip-audit (production dependencies)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Non-blocking until SEG-H04 (P4) upgrades starlette and replaces
-    # python-jose; today it reports known, unreachable advisories (report
-    # section 8). Remove this line once pip-audit is clean.
-    continue-on-error: true
+    # SEG-H04 (P4): starlette upgraded and python-jose replaced by PyJWT;
+    # pip-audit is clean on production dependencies, so the gate is blocking.
     steps:
       - uses: actions/checkout@v7
 
