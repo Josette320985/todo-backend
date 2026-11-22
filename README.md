@@ -178,7 +178,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 - `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
 - `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token.
-- `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks.
+- `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks. Task ids are bounded to SQLite's signed 64-bit range (`1` to `2**63 - 1`), so an oversized id answers 422 instead of 500.
 
 #### `app/core/` (Configuration and Security)
 
