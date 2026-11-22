@@ -1,0 +1,13 @@
+-r requirements.in
+
+# Static type checker (configured in pyproject.toml).
+mypy==1.*
+
+# Test runner and in-process HTTP client (TEST-01), moved out of
+# production dependencies by SEG-H04.
+pytest==8.*
+pytest-asyncio==0.24.*
+httpx==0.28.*
+
+# Coverage report for pytest (used by the CI, TEST-10).
+pytest-cov==6.*
