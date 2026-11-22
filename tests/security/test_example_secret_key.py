@@ -9,7 +9,7 @@ attacker signs {"sub": "1"} with the text from the old .env.example.
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from jose import jwt
+import jwt
 
 EXAMPLE_KEY = (
     "reemplaza-esta-clave-por-una-larga-y-aleatoria-de-al-menos-32-caracteres"

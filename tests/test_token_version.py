@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import FastAPI
-from jose import jwt
+import jwt
 from sqlalchemy import inspect, text
 
 from app.core.config import Settings

@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Final
 
 import bcrypt
-from jose import jwt
+import jwt
 
 from app.core.config import Settings
 
