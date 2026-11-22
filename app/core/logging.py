@@ -6,6 +6,7 @@ back in the ``X-Request-ID`` response header. Behind Nginx that id is the same
 one Nginx logs (``$request_id``), which joins the logs of both containers.
 """
 
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 import logging
 import logging.config
@@ -14,7 +15,10 @@ from typing import Final
 from uuid import uuid4
 
 from starlette.datastructures import MutableHeaders
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+ErrorResponseBuilder = Callable[[Scope, Exception], Awaitable[JSONResponse]]
 
 # Header used to carry the correlation id, in and out.
 REQUEST_ID_HEADER: Final[str] = "X-Request-ID"
@@ -106,14 +110,17 @@ class RequestIdMiddleware:
     Pure ASGI middleware that assigns, propagates and returns a request id.
 
     Reuses the id sent by Nginx (``$request_id``) when it is well formed and
-    generates one otherwise. Unhandled exceptions are logged here for two
-    reasons: this is the outermost middleware, so the id is still available,
-    and the generated 500 must carry the header for the client to quote it
-    back when reporting the error.
+    generates one otherwise. Unhandled exceptions are rendered by the injected
+    global handler so the 500 response carries the same id.
     """
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        error_response_builder: ErrorResponseBuilder | None = None,
+    ) -> None:
         self.app = app
+        self.error_response_builder = error_response_builder
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -122,25 +129,32 @@ class RequestIdMiddleware:
 
         request_id: str = _request_id_from(scope)
         token = _request_id.set(request_id)
-        response_started: bool = False
 
         async def send_with_request_id(message: Message) -> None:
-            nonlocal response_started
             if message["type"] == "http.response.start":
-                response_started = True
                 MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
             await send(message)
 
         try:
             await self.app(scope, receive, send_with_request_id)
-        except Exception:
-            logger.exception(
-                "Error no controlado | %s %s", scope["method"], scope["path"]
-            )
-            # The body is already streaming: the response cannot be replaced.
-            if response_started:
+        except Exception as exc:
+            if self.error_response_builder is None:
                 raise
-            await _send_internal_error(send_with_request_id)
+            response = await self.error_response_builder(scope, exc)
+            headers = [
+                (name.encode("latin-1"), value.encode("latin-1"))
+                for name, value in response.headers.items()
+            ]
+            await send_with_request_id(
+                {
+                    "type": "http.response.start",
+                    "status": response.status_code,
+                    "headers": headers,
+                }
+            )
+            await send_with_request_id(
+                {"type": "http.response.body", "body": response.body}
+            )
         finally:
             _request_id.reset(token)
 
@@ -154,19 +168,3 @@ def _request_id_from(scope: Scope) -> str:
                 return candidate
             break
     return uuid4().hex
-
-
-async def _send_internal_error(send: Send) -> None:
-    """Send a minimal 500 response in the same shape as the API errors."""
-    body: bytes = b'{"detail": "Internal Server Error"}'
-    await send(
-        {
-            "type": "http.response.start",
-            "status": 500,
-            "headers": [
-                (b"content-type", b"application/json"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        }
-    )
-    await send({"type": "http.response.body", "body": body})
