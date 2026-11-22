@@ -1,7 +1,8 @@
 from collections.abc import Sequence
+from typing import Any, cast
 
 from fastapi import Depends
-from sqlalchemy import Select, select
+from sqlalchemy import CursorResult, Select, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -59,17 +60,20 @@ class TaskRepository:
 
     async def delete_owned(self, task_id: int, owner_id: int) -> bool:
         """
-        Delete the task if it belongs to owner_id.
+        Delete the task if it belongs to owner_id, in a single query (OPT-04).
 
-        Returns False when there is nothing to delete (missing or someone
-        else's task). Still a SELECT + DELETE; OPT-04 makes it one query.
+        The ownership check lives in the WHERE clause, so another user's task
+        is simply not matched. Returns False when nothing was deleted (missing
+        or someone else's task); the caller answers 404 in both cases.
         """
-        task = await self.get_owned(task_id, owner_id)
-        if task is None:
-            return False
-        await self.db.delete(task)
+        result = cast(
+            CursorResult[Any],
+            await self.db.execute(
+                delete(Task).where(Task.id == task_id, Task.owner_id == owner_id)
+            ),
+        )
         await self.db.commit()
-        return True
+        return result.rowcount > 0
 
 
 def get_task_repository(db: AsyncSession = Depends(get_db)) -> TaskRepository:
