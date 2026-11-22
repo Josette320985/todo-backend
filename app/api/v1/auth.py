@@ -11,7 +11,10 @@ from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository, get_user_repository
 from app.schemas.token import Token
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import (
+    EmailValidationRequest, EmailValidationResult, UserCreate, UserRead,
+    check_registration_email,
+)
 from app.services.auth_service import AuthService
 
 # Router responsible for user registration and authentication.
@@ -41,6 +44,16 @@ def _enforce_rate_limit(key: str, max_attempts: int) -> None:
             detail="Demasiados intentos. Intenta de nuevo en un minuto.",
         )
     bucket.append(now)
+
+
+@router.post("/validate-email", response_model=EmailValidationResult)
+async def validate_registration_email(
+    request: Request, payload: EmailValidationRequest,
+) -> EmailValidationResult:
+    """Validate syntax before registration, without creating or looking up users."""
+    client_ip = request.client.host if request.client else "unknown"
+    _enforce_rate_limit(f"validate-email:{client_ip}", 60)
+    return check_registration_email(payload.email)
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
