@@ -22,7 +22,7 @@ test('flujo 1 · registro, CRUD con deshacer y cierre de sesión', async ({ page
 
   await test.step('registro (entra directo a la lista)', async () => {
     await registerViaUi(page, email);
-    await expect(page.getByText('No hay tareas pendientes.')).toBeVisible();
+    await expect(page.getByText('Aún no tienes tareas. Escribe la primera arriba.')).toBeVisible();
   });
 
   await test.step('crear', async () => {
