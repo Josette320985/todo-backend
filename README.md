@@ -154,7 +154,7 @@ Shared fixtures live in `tests/conftest.py`:
 | `other_user` | A second user, to test access to someone else's data. |
 | `count_queries` | List of the SQL statements the app executed (call `.clear()` before the request you measure). |
 
-Mark long-running tests with `@pytest.mark.slow`. Security tests and their checklist live in `tests/security/`.
+Mark long-running tests with `@pytest.mark.slow`. Security tests and their checklist live in `tests/security/`; service tests live in `tests/services/`, and `tests/test_architecture.py` checks that `app/services` never imports FastAPI.
 
 ---
 
@@ -176,14 +176,16 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 #### `app/api/` (API Endpoints)
 
-- `deps.py`: Shared API dependencies. Contains the `get_current_user()` function, which validates JWT access tokens and retrieves the authenticated user for protected endpoints.
-- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Handles user registration, password verification, and JWT access token generation.
-- `v1/tasks.py`: Task CRUD endpoints. Filters tasks by `owner_id` to ensure users can only access and modify their own tasks.
+- `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
+- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token.
+- `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks.
 
 #### `app/core/` (Configuration and Security)
 
 - `config.py`: Loads application settings from environment variables using Pydantic Settings. `get_settings()` (cached) is the FastAPI dependency that endpoints use; `create_app()` overrides it with the settings it receives.
 - `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
+- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`) and the handler that translates them to JSON, so services never import FastAPI or build HTTP responses.
+- `dates.py`: The single date-range rule (`date_range_error`) shared by the task schemas and `TaskService`.
 
 #### `app/db/` (Database)
 
@@ -200,6 +202,12 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 - `user.py`: Defines schemas for validating user registration data and returning user information without exposing password hashes.
 - `task.py`: Defines schemas for creating, updating, and returning task information.
 - `token.py`: Defines the structure of the JWT authentication response.
+
+#### `app/services/` (Business Rules)
+
+- `task_service.py`: `TaskService` with `list_tasks`, `create_task`, `update_task` (allowlisted fields and the combined date-range check) and `delete_task`.
+- `auth_service.py`: `AuthService` with `register` (duplicate check, bcrypt in a worker thread) and `authenticate` (normalization, dummy hash for unknown emails, failure log).
+- These modules must not import FastAPI: `tests/test_architecture.py` enforces it.
 
 ---
 

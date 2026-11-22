@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from app.api.v1.auth import _sanitize_for_log
+from app.core.logging import sanitize_for_log
 from conftest import login
 
 
@@ -10,13 +10,13 @@ from conftest import login
     ["a\r\nFAKE LOG LINE", "\x1b[31mred", "a b", "a\x00b", "a\x7fb"],
 )
 def test_control_chars_are_escaped(raw: str) -> None:
-    cleaned = _sanitize_for_log(raw)
+    cleaned = sanitize_for_log(raw)
     assert cleaned.isprintable()
     assert cleaned.isascii()
 
 
 def test_output_is_truncated() -> None:
-    assert len(_sanitize_for_log("x" * 500)) == 120
+    assert len(sanitize_for_log("x" * 500)) == 120
 
 
 async def test_failed_login_logs_escaped_email(

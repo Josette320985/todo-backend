@@ -6,7 +6,10 @@ from jose import JWTError, jwt
 
 from app.core.config import Settings, get_settings
 from app.models.user import User
+from app.repositories.task_repository import TaskRepository, get_task_repository
 from app.repositories.user_repository import UserRepository, get_user_repository
+from app.services.auth_service import AuthService
+from app.services.task_service import TaskService
 
 # Extract the Bearer token from the Authorization header.
 # The token URL identifies the authentication endpoint.
@@ -69,3 +72,18 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+def get_task_service(
+    tasks: TaskRepository = Depends(get_task_repository),
+) -> TaskService:
+    """FastAPI dependency: a TaskService bound to the request's repository."""
+    return TaskService(tasks)
+
+
+def get_auth_service(
+    users: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings),
+) -> AuthService:
+    """FastAPI dependency: an AuthService bound to the request's repository."""
+    return AuthService(users, settings)

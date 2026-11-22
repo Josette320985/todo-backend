@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.v1 import auth, tasks
 from app.core.config import Settings, get_settings
+from app.core.errors import register_exception_handlers
 from app.core.logging import RequestIdMiddleware, configure_logging
 from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
@@ -185,6 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.migrated = False
     app.state.migrate_lock = asyncio.Lock()
     app.dependency_overrides[get_settings] = lambda: app_settings
+    register_exception_handlers(app)
 
     # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
     # Credentials are disabled: auth uses a Bearer header, not cookies.

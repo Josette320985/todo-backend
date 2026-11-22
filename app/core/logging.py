@@ -41,6 +41,11 @@ _LOG_FORMAT: Final[str] = (
 _configured: bool = False
 
 
+def sanitize_for_log(value: str, max_len: int = 120) -> str:
+    """Escape control/non-ASCII characters (CR/LF, ANSI, U+2028...) and truncate."""
+    return value.encode("unicode_escape").decode("ascii")[:max_len]
+
+
 class RequestIdFilter(logging.Filter):
     """Attach the current request id to every record that is emitted."""
 

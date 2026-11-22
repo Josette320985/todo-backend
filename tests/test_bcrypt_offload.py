@@ -15,7 +15,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from app.api.v1 import auth as auth_module
+from app.services import auth_service as auth_module
 from conftest import login
 
 # The patched hash blocks 6x longer than health is allowed to take.
