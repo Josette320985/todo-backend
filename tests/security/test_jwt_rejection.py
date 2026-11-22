@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from jose import jwt
+import jwt
 
 from app.core.config import Settings
 

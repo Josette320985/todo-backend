@@ -2,7 +2,7 @@ from typing import Any, Final
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 
 from app.core.config import Settings, get_settings
 from app.models.user import User
@@ -54,14 +54,14 @@ async def get_current_user(
         payload: dict[str, Any] = jwt.decode(
             token,
             settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-            options={"require_sub": True, "require_exp": True},
+            algorithms=["HS256"],
+            options={"require": ["exp", "sub"]},
         )
         raw_sub: Any = payload.get("sub")
         if not isinstance(raw_sub, str):
             raise credentials_exception
         parsed_user_id: int = int(raw_sub)
-    except (JWTError, ValueError, TypeError):
+    except (jwt.PyJWTError, ValueError, TypeError):
         raise credentials_exception
 
     # Retrieve the user associated with the validated token.
