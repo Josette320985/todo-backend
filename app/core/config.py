@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import ClassVar, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -84,4 +84,36 @@ def get_settings() -> Settings:
     dependency with the Settings it was given, so tests can build apps
     with their own configuration without touching environment variables.
     """
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        # ERR-09: one readable line instead of a Pydantic traceback.
+        raise SystemExit(describe_settings_error(exc)) from None
+
+
+# How to produce a valid SECRET_KEY, shown when it is missing or rejected.
+SECRET_KEY_HINT: str = (
+    'genera una con: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+)
+
+
+def describe_settings_error(exc: ValidationError) -> str:
+    """
+    Summarize a Settings validation error in a single line (ERR-09).
+
+    Names each variable that is missing or invalid and, for SECRET_KEY,
+    how to generate one. The rejected values are never included, so a
+    real secret cannot leak into the logs.
+    """
+    problems: list[str] = []
+    for error in exc.errors(include_input=False, include_url=False):
+        name: str = ".".join(str(part) for part in error["loc"]) or "configuración"
+        if error["type"] == "missing":
+            problem = f"falta {name}"
+            if name == "SECRET_KEY":
+                problem += f" en el entorno o en .env; {SECRET_KEY_HINT}"
+        else:
+            reason: str = error["msg"].removeprefix("Value error, ")
+            problem = f"{name} no es válida: {reason}"
+        problems.append(problem)
+    return "Error de configuración: " + "; ".join(problems)
