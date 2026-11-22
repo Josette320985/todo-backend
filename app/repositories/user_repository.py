@@ -1,5 +1,6 @@
 from fastapi import Depends
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -21,9 +22,19 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def add(self, user: User) -> User:
-        """Save a new or modified user and return it with its current values."""
+        """
+        Save a new or modified user and return it with its current values.
+
+        If the commit violates a database constraint (for example, the unique
+        email index), the failed transaction is rolled back before the error is
+        re-raised, so the session remains usable.
+        """
         self.db.add(user)
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except IntegrityError:
+            await self.db.rollback()
+            raise
         await self.db.refresh(user)
         return user
 

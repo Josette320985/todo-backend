@@ -65,7 +65,10 @@ async def register(
 
     Raises:
         HTTPException: If rate limit is exceeded (429).
-        EmailAlreadyRegistered: If the email is already registered (400).
+        EmailAlreadyRegistered: If the email is already registered (400). The
+            explicit message is intentional: SEG-H05 accepts email enumeration
+            on registration, bounded by rate limiting and the generic login
+            response.
     """
     client_ip: str = request.client.host if request.client else "unknown"
     _enforce_rate_limit(
