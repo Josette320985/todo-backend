@@ -1,13 +1,22 @@
 from collections.abc import Sequence
-from typing import Any, cast
+from typing import Any, Final, cast
 
 from fastapi import Depends
-from sqlalchemy import CursorResult, Select, delete, func, select
+from sqlalchemy import ColumnElement, CursorResult, Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
+from app.utils.task_sorting import (
+    DEFAULT_SORT_ORDER,
+    DEFAULT_TASK_SORT,
+    SortOrder,
+    TaskSortField,
+)
 from app.db.session import get_db
 from app.models.task import Task
 
+# One ORDER BY term: a plain mapped column or an SQL expression.
+type OrderClause = ColumnElement[Any] | InstrumentedAttribute[Any]
 
 # Order of GET /tasks (OPT-02): pending first, then by due date with
 # undated tasks last, and the id as the final tie-breaker.
@@ -17,6 +26,55 @@ TASK_LIST_ORDER = (
     Task.end_date,
     Task.id,
 )
+
+# Allow-list of sortable columns. The ORDER BY is built only from here, never
+# from client text. Title is compared case-insensitively.
+_SORT_COLUMNS: Final[dict[TaskSortField, OrderClause]] = {
+    TaskSortField.COMPLETED: Task.completed,
+    TaskSortField.END_DATE: Task.end_date,
+    TaskSortField.START_DATE: Task.start_date,
+    TaskSortField.TITLE: func.lower(Task.title),
+    TaskSortField.ID: Task.id,
+}
+
+if set(_SORT_COLUMNS) != set(TaskSortField):
+    missing = sorted(set(TaskSortField) - set(_SORT_COLUMNS))
+    raise RuntimeError(f"_SORT_COLUMNS has no column for: {missing}")
+
+# Nullable columns: tasks without a value always go last, in both directions.
+_NULLABLE_SORT_FIELDS: Final[frozenset[TaskSortField]] = frozenset(
+    {TaskSortField.END_DATE, TaskSortField.START_DATE}
+)
+
+
+def build_task_order(
+    sort_by: Sequence[TaskSortField] | None = None,
+    order: SortOrder = DEFAULT_SORT_ORDER,
+) -> tuple[OrderClause, ...]:
+    """
+    Return the ORDER BY clauses for a task listing (OPT-02).
+
+    The fields are applied in the given sequence, all in the direction
+    ``order``; repeated fields are ignored. Without fields the fallback
+    DEFAULT_TASK_SORT applies (and ``order`` is ignored), which produces
+    ``completed, end_date IS NULL, end_date, id``: the OPT-02 order.
+    Tasks with a NULL date always go last, and the id is added as the final
+    tie-breaker when the caller did not include it, so the order stays total
+    and pagination (SEG-H12) stays stable.
+    """
+    fields: tuple[TaskSortField, ...] = tuple(dict.fromkeys(sort_by or ()))
+    if not fields:
+        fields, order = DEFAULT_TASK_SORT, DEFAULT_SORT_ORDER
+
+    clauses: list[OrderClause] = []
+    for field in fields:
+        column: OrderClause = _SORT_COLUMNS[field]
+        if field in _NULLABLE_SORT_FIELDS:
+            clauses.append(column.is_(None))
+        clauses.append(column.desc() if order is SortOrder.DESC else column.asc())
+    if TaskSortField.ID not in fields:
+        clauses.append(Task.id)
+    return tuple(clauses)
 
 
 class TaskRepository:
@@ -37,20 +95,23 @@ class TaskRepository:
         limit: int | None = None,
         offset: int = 0,
         completed: bool | None = None,
+        sort_by: Sequence[TaskSortField] | None = None,
+        order: SortOrder = DEFAULT_SORT_ORDER,
     ) -> Sequence[Task]:
         """
         Return the tasks of one user in a deterministic order (OPT-02).
 
-        Pending tasks first, then completed ones; inside each group by due
-        date (tasks without end_date last) and finally by id, so two tasks
-        never tie and the order is the same on every request. Pagination
+        Without sort_by the OPT-02 order applies: pending tasks first, then
+        completed ones; inside each group by due date (tasks without end_date
+        last) and finally by id, so two tasks never tie and the order is the
+        same on every request. With sort_by, see build_task_order. Pagination
         (SEG-H12) relies on this order. limit=None returns every task;
         completed=None does not filter by status.
         """
         query: Select[tuple[Task]] = (
             select(Task)
             .where(Task.owner_id == owner_id)
-            .order_by(*TASK_LIST_ORDER)
+            .order_by(*build_task_order(sort_by, order))
         )
         if completed is not None:
             query = query.where(Task.completed == completed)
