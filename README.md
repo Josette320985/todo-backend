@@ -184,7 +184,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 - `config.py`: Loads application settings from environment variables using Pydantic Settings. `get_settings()` (cached) is the FastAPI dependency that endpoints use; `create_app()` overrides it with the settings it receives.
 - `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
-- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`) and the handler that translates them to JSON, so services never import FastAPI or build HTTP responses.
+- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`) and the handlers that translate domain errors, `RequestValidationError` and `StarletteHTTPException` to the single Spanish error format, so services never import FastAPI or build HTTP responses.
 - `dates.py`: The single date-range rule (`date_range_error`) shared by the task schemas and `TaskService`.
 - `emails.py`: The single email normalization rule (SEG-H09) shared by `UserCreate` and `AuthService`; strips, validates with `email-validator`, applies Unicode/IDN normalization, and lowercases.
 
