@@ -3,12 +3,13 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Final
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -16,7 +17,14 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.v1 import auth, tasks
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
-from app.core.logging import RequestIdMiddleware, configure_logging
+from app.core.logging import (
+    REQUEST_ID_HEADER,
+    RequestIdMiddleware,
+    _request_id,
+    _request_id_from,
+    configure_logging,
+    logger as request_logger,
+)
 from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
@@ -31,6 +39,87 @@ READINESS_TIMEOUT_SECONDS: Final[float] = 2.0
 # Failures that mean "the database is not usable right now". Anything else
 # (a broken migration script, a bug) still crashes loudly.
 DATABASE_ERRORS: Final = (SQLAlchemyError, OSError)
+
+SECURITY_HEADERS: Final[dict[str, str]] = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Cache-Control": "no-store",
+}
+
+UNEXPECTED_ERROR_DETAIL: Final[str] = (
+    "Ocurrió un error inesperado. Intenta de nuevo."
+)
+DATABASE_UNAVAILABLE_DETAIL: Final[str] = (
+    "El servicio no está disponible temporalmente. Intenta de nuevo."
+)
+
+
+def _security_headers() -> dict[str, str]:
+    """Return a fresh copy so callers can add headers without sharing state."""
+    return dict(SECURITY_HEADERS)
+
+
+async def build_unhandled_error_response(
+    scope: Scope, exc: Exception
+) -> JSONResponse:
+    """Build the public 500 response and log the full traceback (ERR-01)."""
+    request = Request(scope)
+    request_id: str = _request_id.get()
+    if request_id == "-":
+        request_id = _request_id_from(scope)
+    token = _request_id.set(request_id)
+    try:
+        request_logger.error(
+            "Error no controlado | %s %s",
+            request.method,
+            request.url.path,
+            exc_info=exc,
+        )
+    finally:
+        _request_id.reset(token)
+
+    headers = _security_headers()
+    headers[REQUEST_ID_HEADER] = request_id
+    return JSONResponse(
+        status_code=500,
+        content={"detail": UNEXPECTED_ERROR_DETAIL, "code": "internal_error"},
+        headers=headers,
+    )
+
+
+async def unhandled_exception_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Starlette entry point for the shared 500 response."""
+    return await build_unhandled_error_response(request.scope, exc)
+
+
+async def operational_error_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    """Build the public 503 response for an unavailable database (ERR-01)."""
+    request_id: str = _request_id.get()
+    if request_id == "-":
+        request_id = _request_id_from(request.scope)
+    request_logger.warning(
+        "Base de datos no disponible | %s %s | %s",
+        request.method,
+        request.url.path,
+        type(exc).__name__,
+    )
+
+    headers = _security_headers()
+    headers[REQUEST_ID_HEADER] = request_id
+    headers["Retry-After"] = "1"
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": DATABASE_UNAVAILABLE_DETAIL,
+            "code": "service_unavailable",
+        },
+        headers=headers,
+    )
 
 
 class SecurityHeadersMiddleware:
@@ -53,10 +142,8 @@ class SecurityHeadersMiddleware:
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                headers["X-Content-Type-Options"] = "nosniff"
-                headers["X-Frame-Options"] = "DENY"
-                headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-                headers["Cache-Control"] = "no-store"
+                for name, value in SECURITY_HEADERS.items():
+                    headers[name] = value
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
@@ -187,6 +274,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.migrate_lock = asyncio.Lock()
     app.dependency_overrides[get_settings] = lambda: app_settings
     register_exception_handlers(app)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
+    app.add_exception_handler(OperationalError, operational_error_handler)
 
     # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
     # Credentials are disabled: auth uses a Bearer header, not cookies.
@@ -199,11 +288,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     # Assign, propagate and return the X-Request-ID of every request (ERR-04).
-    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(
+        RequestIdMiddleware, error_response_builder=build_unhandled_error_response
+    )
 
     # Added last so it is the outermost middleware: the headers also reach the
-    # responses built by the other middlewares, including the 500 of the error
-    # path (PERF-02).
+    # responses built by the other middlewares. The global 500 handler lives
+    # outside this stack, so it adds them itself (PERF-02, ERR-01).
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Register authentication and task management routes.

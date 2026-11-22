@@ -172,7 +172,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 
 ### `app/` Directory (Source Code)
 
-- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) and security headers, registers the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
+- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`) and security headers, registers the global exception handlers (ERR-01), the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
 
 #### `app/api/` (API Endpoints)
 
