@@ -48,7 +48,7 @@ belong to the E2E suite (TEST-09) or the CI (TEST-10).
 | SEG-H06 | `PUT /api/v1/tasks/99999999999999999999` gets 422 | P6 | [x] `test_task_id_bounds.py::test_put_out_of_range_task_id_is_422`, `test_delete_out_of_range_task_id_is_422` |
 | SEG-H07 | `/api/openapi.json` gets 404 with `ENVIRONMENT=production` | P3 | [x] `test_api_docs.py::test_docs_are_404_outside_development`, `test_docs_are_served_in_development` |
 | SEG-H08 | A login with `\x1b[31m` in the email is logged escaped | P8 | [x] `tests/test_log_sanitization.py::test_failed_login_logs_escaped_email` |
-| SEG-H09 | A user registered with a Unicode email can log in | P6 | [ ] pending |
+| SEG-H09 | A user registered with a Unicode email can log in | P6 | [x] `test_email_normalization.py::test_unicode_email_can_log_in`, `test_idn_punycode_login_matches_unicode_registration`, `test_invalid_email_login_is_401` |
 | SEG-H10 | After logout, the previous token gets 401 | P8 | [x] `tests/test_logout.py::test_logout_revokes_previous_token`, `tests/test_token_version.py` |
 | SEG-H11 | The browser console does not show `Authorization` | P7 | [ ] pending (frontend, TEST-08) |
 | SEG-H12 | `?limit=1000000` gets 422 or is capped; creating past the cap gets 4xx | P5 | [ ] pending |

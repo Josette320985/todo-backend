@@ -13,6 +13,7 @@ from typing import Final
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings
+from app.core.emails import normalize_email
 from app.core.errors import EmailAlreadyRegistered, InvalidCredentials
 from app.core.logging import sanitize_for_log
 from app.core.security import dummy_password_hash, hash_password, verify_password
@@ -43,18 +44,21 @@ class AuthService:
         """
         Register a new user.
 
+        The email is normalized with the same function used by login.
+
         Raises:
             EmailAlreadyRegistered: If the email is already in use, including
                 when a concurrent registration wins the race and the unique
                 constraint is violated.
         """
-        if await self._users.get_by_email(payload.email) is not None:
+        email: str = normalize_email(payload.email)
+        if await self._users.get_by_email(email) is not None:
             raise EmailAlreadyRegistered()
 
         hashed: str = await asyncio.to_thread(
             hash_password, payload.password, self._settings.BCRYPT_ROUNDS
         )
-        user: User = User(email=payload.email, hashed_password=hashed)
+        user: User = User(email=email, hashed_password=hashed)
         try:
             return await self._users.add(user)
         except IntegrityError as exc:
@@ -69,6 +73,10 @@ class AuthService:
         """
         Return the user when the credentials are valid.
 
+        The email is normalized with the same function used by registration,
+        so Unicode and IDN forms match the stored value. An invalid email is
+        treated as an unknown account.
+
         Args:
             email (str): Email submitted by the client.
             password (str): Plain-text password submitted by the client.
@@ -78,8 +86,16 @@ class AuthService:
             InvalidCredentials: If the email does not exist or the password
                 does not match.
         """
-        normalized_email: str = email.strip().lower()
-        user: User | None = await self._users.get_by_email(normalized_email)
+        try:
+            normalized_email: str | None = normalize_email(email)
+        except ValueError:
+            normalized_email = None
+
+        user: User | None = (
+            await self._users.get_by_email(normalized_email)
+            if normalized_email is not None
+            else None
+        )
 
         if user is None:
             dummy: str = await asyncio.to_thread(

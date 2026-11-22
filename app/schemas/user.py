@@ -1,22 +1,30 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Annotated
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+)
+
+from app.core.emails import normalize_email
+
+NormalizedEmail = Annotated[EmailStr, AfterValidator(normalize_email)]
 
 
 class UserCreate(BaseModel):
     """
     Schema for registering a new user.
 
-    Validates the email address format and requires a password
-    between 8 and 72 characters ( maximum 72 UTF-8 bytes for bcrypt )
+    Validates and normalizes the email address (Unicode/IDN) and requires a
+    password between 8 and 72 characters ( maximum 72 UTF-8 bytes for bcrypt )
     containing at least one letter and one digit.
     """
 
-    email: EmailStr
+    email: NormalizedEmail
     password: str = Field(min_length=8, max_length=72)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().lower()
 
     @field_validator("password")
     @classmethod

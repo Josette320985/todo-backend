@@ -88,7 +88,9 @@ async def login(
     Authenticate a user and generate a JWT access token.
 
     Enforces rate limiting, delegates credential verification to the
-    authentication service, and creates the access token.
+    authentication service, and creates the access token. The submitted
+    username is normalized with the same function used at registration
+    (SEG-H09), so Unicode and IDN forms match the stored email.
 
     Args:
         request (Request): Incoming HTTP request.
