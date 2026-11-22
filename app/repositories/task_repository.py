@@ -48,11 +48,13 @@ class TaskRepository:
         """
         Save a new or modified task and return it with its current values.
 
-        The refresh is kept for now; OPT-03 removes it.
+        No refresh after the commit (OPT-03): the session factory uses
+        expire_on_commit=False, so the object keeps its values, and the flush
+        already fills the generated id and the column defaults (completed).
+        A refresh would only repeat that work with an extra SELECT.
         """
         self.db.add(task)
         await self.db.commit()
-        await self.db.refresh(task)
         return task
 
     async def delete_owned(self, task_id: int, owner_id: int) -> bool:
