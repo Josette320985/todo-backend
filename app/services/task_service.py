@@ -12,6 +12,12 @@ from typing import Any, Final
 
 from app.core.dates import date_range_error
 from app.core.errors import NotFoundError, TaskLimitReached, ValidationFailed
+from app.utils.task_sorting import (
+    DEFAULT_SORT_ORDER,
+    DEFAULT_TASK_SORT,
+    SortOrder,
+    TaskSortField,
+)
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import TaskCreate, TaskUpdate
@@ -40,16 +46,26 @@ class TaskService:
         limit: int | None = None,
         offset: int = 0,
         completed: bool | None = None,
+        sort_by: Sequence[TaskSortField] | None = None,
+        order: SortOrder = DEFAULT_SORT_ORDER,
     ) -> Sequence[Task]:
         """
-        Return one page of the user's tasks, in the order of OPT-02.
+        Return one page of the user's tasks.
+
+        The order is OPT-02's (the repository fallback) unless the caller
+        passes sort_by.
 
         The page is never larger than MAX_PAGE_SIZE (SEG-H12), even when the
         caller asks for more or passes no limit.
         """
         page_size: int = min(limit or MAX_PAGE_SIZE, MAX_PAGE_SIZE)
         return await self._tasks.list_by_owner(
-            owner_id, limit=page_size, offset=offset, completed=completed
+            owner_id,
+            limit=page_size,
+            offset=offset,
+            completed=completed,
+            sort_by=sort_by,
+            order=order,
         )
 
     async def create_task(self, owner_id: int, payload: TaskCreate) -> Task:

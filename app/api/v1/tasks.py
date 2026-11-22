@@ -4,6 +4,12 @@ from typing import Annotated, Final
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.deps import get_current_user, get_task_service
+from app.utils.task_sorting import (
+    DEFAULT_SORT_ORDER,
+    DEFAULT_TASK_SORT,
+    SortOrder,
+    TaskSortField,
+)
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
@@ -23,20 +29,30 @@ async def list_tasks(
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = MAX_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0, le=MAX_TASKS_PER_USER)] = 0,
     completed: Annotated[bool | None, Query()] = None,
+    sort_by: Annotated[
+        list[TaskSortField] | None, Query(max_length=len(TaskSortField))
+    ] = None,
+    order: Annotated[SortOrder, Query()] = DEFAULT_SORT_ORDER,
     service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> Sequence[Task]:
     """
     Retrieve one page of the authenticated user's tasks (SEG-H12).
 
-    Pending tasks first, then by due date (OPT-02). Without parameters the
-    page is the maximum size, which is also the per-user cap, so the whole
-    list fits in it.
+    Pending tasks first, then by due date (OPT-02) unless sort_by is sent.
+    Without parameters the page is the maximum size, which is also the
+    per-user cap, so the whole list fits in it.
 
     Args:
         limit (int): Page size, 1 to MAX_PAGE_SIZE. Larger values are 422.
         offset (int): Tasks to skip, 0 to MAX_TASKS_PER_USER.
         completed (bool | None): Only pending (false) or completed (true).
+        sort_by (list[TaskSortField] | None): Repeatable, applied in the given
+            sequence: completed, end_date, start_date, title or id. Omitted
+            means the OPT-02 order (completed, end_date, id). Anything else
+            is 422. Tasks without a date always go last; id breaks ties.
+        order (SortOrder): asc or desc for every field in sort_by; ignored
+            when sort_by is omitted.
         service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
@@ -44,9 +60,13 @@ async def list_tasks(
         Sequence[Task]: The requested page of the user's tasks.
     """
     return await service.list_tasks(
-        current_user.id, limit=limit, offset=offset, completed=completed
+        current_user.id,
+        limit=limit,
+        offset=offset,
+        completed=completed,
+        sort_by=sort_by,
+        order=order,
     )
-
 
 @router.post("/", response_model=TaskRead, status_code=201)
 async def create_task(
