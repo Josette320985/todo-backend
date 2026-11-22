@@ -6,12 +6,34 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    TypeAdapter,
+    ValidationError,
     field_validator,
 )
 
 from app.core.emails import normalize_email
 
 NormalizedEmail = Annotated[EmailStr, AfterValidator(normalize_email)]
+_email_adapter: TypeAdapter[str] = TypeAdapter(NormalizedEmail)
+
+
+class EmailValidationRequest(BaseModel):
+    email: str = Field(max_length=2048)
+
+
+class EmailValidationResult(BaseModel):
+    valid: bool
+    normalized: str | None = None
+    message: str | None = None
+
+
+def check_registration_email(value: str) -> EmailValidationResult:
+    """Use the registration field itself; never query account availability or DNS."""
+    try:
+        normalized = _email_adapter.validate_python(value)
+    except (ValidationError, ValueError):
+        return EmailValidationResult(valid=False, message="El email no es válido")
+    return EmailValidationResult(valid=True, normalized=normalized)
 
 
 class UserCreate(BaseModel):
