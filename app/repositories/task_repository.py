@@ -9,6 +9,16 @@ from app.db.session import get_db
 from app.models.task import Task
 
 
+# Order of GET /tasks (OPT-02): pending first, then by due date with
+# undated tasks last, and the id as the final tie-breaker.
+TASK_LIST_ORDER = (
+    Task.completed,
+    Task.end_date.is_(None),
+    Task.end_date,
+    Task.id,
+)
+
+
 class TaskRepository:
     """
     Data access for tasks (ARQ-02).
@@ -25,12 +35,18 @@ class TaskRepository:
         self, owner_id: int, limit: int | None = None, offset: int = 0
     ) -> Sequence[Task]:
         """
-        Return the tasks of one user.
+        Return the tasks of one user in a deterministic order (OPT-02).
 
-        limit=None returns every task (current behaviour). Pagination
-        (SEG-H12) and a deterministic order (OPT-02) are added here.
+        Pending tasks first, then completed ones; inside each group by due
+        date (tasks without end_date last) and finally by id, so two tasks
+        never tie and the order is the same on every request. Pagination
+        (SEG-H12) relies on this order. limit=None returns every task.
         """
-        query: Select[tuple[Task]] = select(Task).where(Task.owner_id == owner_id)
+        query: Select[tuple[Task]] = (
+            select(Task)
+            .where(Task.owner_id == owner_id)
+            .order_by(*TASK_LIST_ORDER)
+        )
         if offset:
             query = query.offset(offset)
         if limit is not None:
