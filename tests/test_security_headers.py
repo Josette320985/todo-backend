@@ -65,7 +65,9 @@ async def test_headers_on_500(app: FastAPI, client: httpx.AsyncClient) -> None:
     assert response.headers.get(REQUEST_ID_HEADER)
 
 
-@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@pytest.mark.parametrize(
+    "method", ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+)
 async def test_headers_on_cors_preflight_and_methods(
     client: httpx.AsyncClient, method: str
 ) -> None:

@@ -119,6 +119,29 @@ async def login(
     }
 
 
+@router.get("/me", response_model=UserRead)
+async def read_current_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Return the authenticated user's public profile.
+
+    UX-14 uses this endpoint to show the email in the navigation bar. The user
+    is loaded by ``get_current_user``, which validates the JWT and the token
+    version, so no password hash or other private field is exposed.
+
+    Args:
+        current_user (User): User resolved from the Bearer token.
+
+    Returns:
+        User: The authenticated user, serialized as ``UserRead``.
+
+    Raises:
+        HTTPException: If the token is invalid, expired or revoked (401).
+    """
+    return current_user
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     user: User = Depends(get_current_user),
