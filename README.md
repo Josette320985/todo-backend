@@ -153,6 +153,7 @@ Shared fixtures live in `tests/conftest.py`:
 | `user`, `auth_headers` | The default user and its Bearer header. |
 | `other_user` | A second user, to test access to someone else's data. |
 | `count_queries` | List of the SQL statements the app executed (call `.clear()` before the request you measure). |
+| `migrated_template` | Database at the latest Alembic revision, built once per session; `client` copies it into each test's database unless the test created its own file first. |
 
 Mark long-running tests with `@pytest.mark.slow`. Security tests and their checklist live in `tests/security/`; service tests live in `tests/services/`, and `tests/test_architecture.py` checks that `app/services` never imports FastAPI.
 

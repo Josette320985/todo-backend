@@ -6,6 +6,13 @@ a fresh SQLite database in tmp_path, a random SECRET_KEY and the minimum
 bcrypt cost. No environment variables are touched and the real `.env`
 and `data/todo.db` are never used.
 
+The Alembic migrations run once per session into a template database;
+`client` copies it into the test's database file before starting the app,
+so each test skips ~50 ms of migrations. The app still runs the migrations
+on startup (a no-op at head). Tests that build their own schema first
+(tests/test_migrations.py) keep their file: the copy only happens when the
+database does not exist yet.
+
 Fixtures:
     settings      Settings of the test app.
     app           The FastAPI app (its lifespan runs inside `client`).
@@ -17,6 +24,7 @@ Fixtures:
 """
 
 import secrets
+import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,10 +33,11 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import FastAPI
-from sqlalchemy import event
+from sqlalchemy import create_engine, event
 
 from app.api.v1 import auth
 from app.core.config import Settings
+from app.db.migrations import run_migrations
 from app.main import create_app
 
 TEST_EMAIL: str = "user@example.com"
@@ -75,6 +84,24 @@ def settings(tmp_path: Path) -> Settings:
     )
 
 
+def database_path(settings: Settings) -> Path:
+    """File behind a sqlite+aiosqlite DATABASE_URL."""
+    return Path(settings.DATABASE_URL.split("///", 1)[1])
+
+
+@pytest.fixture(scope="session")
+def migrated_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A database at the latest Alembic revision, built once per session."""
+    path = tmp_path_factory.mktemp("template") / "migrated.db"
+    engine = create_engine(f"sqlite:///{path.as_posix()}")
+    try:
+        with engine.begin() as connection:
+            run_migrations(connection)
+    finally:
+        engine.dispose()
+    return path
+
+
 @pytest.fixture
 def app(settings: Settings) -> FastAPI:
     return create_app(settings)
@@ -87,8 +114,13 @@ def _reset_rate_limits() -> None:
 
 
 @pytest.fixture
-async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    """In-process HTTP client, inside the app lifespan (creates the tables)."""
+async def client(
+    app: FastAPI, settings: Settings, migrated_template: Path
+) -> AsyncIterator[httpx.AsyncClient]:
+    """In-process HTTP client, inside the app lifespan (migrated database)."""
+    database = database_path(settings)
+    if not database.exists():
+        shutil.copyfile(migrated_template, database)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
