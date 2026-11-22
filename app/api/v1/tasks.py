@@ -1,13 +1,13 @@
 from collections.abc import Sequence
 from typing import Annotated, Final
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.deps import get_current_user, get_task_service
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
-from app.services.task_service import TaskService
+from app.services.task_service import MAX_PAGE_SIZE, MAX_TASKS_PER_USER, TaskService
 
 # Router responsible for authenticated task management.
 router: Final[APIRouter] = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -20,20 +20,32 @@ TaskId = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 @router.get("/", response_model=list[TaskRead])
 async def list_tasks(
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = MAX_PAGE_SIZE,
+    offset: Annotated[int, Query(ge=0, le=MAX_TASKS_PER_USER)] = 0,
+    completed: Annotated[bool | None, Query()] = None,
     service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> Sequence[Task]:
     """
-    Retrieve all tasks belonging to the authenticated user.
+    Retrieve one page of the authenticated user's tasks (SEG-H12).
+
+    Pending tasks first, then by due date (OPT-02). Without parameters the
+    page is the maximum size, which is also the per-user cap, so the whole
+    list fits in it.
 
     Args:
+        limit (int): Page size, 1 to MAX_PAGE_SIZE. Larger values are 422.
+        offset (int): Tasks to skip, 0 to MAX_TASKS_PER_USER.
+        completed (bool | None): Only pending (false) or completed (true).
         service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
     Returns:
-        Sequence[Task]: Tasks owned by the authenticated user.
+        Sequence[Task]: The requested page of the user's tasks.
     """
-    return await service.list_tasks(current_user.id)
+    return await service.list_tasks(
+        current_user.id, limit=limit, offset=offset, completed=completed
+    )
 
 
 @router.post("/", response_model=TaskRead, status_code=201)
@@ -52,6 +64,10 @@ async def create_task(
 
     Returns:
         Task: The newly created task.
+
+    Raises:
+        TaskLimitReached: If the user already has the maximum number of
+            tasks (409, SEG-H12).
     """
     return await service.create_task(current_user.id, payload)
 

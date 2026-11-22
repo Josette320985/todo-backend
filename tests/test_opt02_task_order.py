@@ -102,7 +102,8 @@ async def test_order_by_still_uses_owner_index(
 
     db_file = Path(settings.DATABASE_URL.split("///", 1)[1])
     with sqlite3.connect(db_file) as conn:
-        rows = conn.execute(f"EXPLAIN QUERY PLAN {statement}", (user.id,)).fetchall()
+        params = (user.id,) + (1,) * (statement.count("?") - 1)  # + LIMIT/OFFSET
+        rows = conn.execute(f"EXPLAIN QUERY PLAN {statement}", params).fetchall()
     plan = " | ".join(str(row[-1]) for row in rows)
 
     assert "ORDER BY" in statement.upper()

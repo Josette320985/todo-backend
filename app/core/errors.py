@@ -116,6 +116,14 @@ class ValidationFailed(DomainError):
         super().__init__(message, errors=[ErrorDetail(field, message)])
 
 
+class TaskLimitReached(DomainError):
+    """The user already has the maximum number of tasks (SEG-H12)."""
+
+    status_code = 409
+    code = "task_limit_reached"
+    detail = "Alcanzaste el máximo de tareas permitido"
+
+
 class EmailAlreadyRegistered(DomainError):
     """The email is already used by another account."""
 
