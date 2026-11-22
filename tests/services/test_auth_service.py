@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.core.config import Settings
 from app.core.errors import EmailAlreadyRegistered, InvalidCredentials
+from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserCreate
 from app.services.auth_service import AuthService
@@ -38,6 +39,42 @@ async def test_register_duplicate_email(
             )
 
         assert exc.value.status_code == 400
+
+
+async def test_register_race_rolls_back_session(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pre-check is bypassed; the unique index raises and is rolled back."""
+    async with app.state.session_factory() as db:
+        repo = UserRepository(db)
+        service = AuthService(repo, settings)
+        await service.register(
+            UserCreate(email="ana@example.com", password="password123")
+        )
+
+        original_get_by_email = repo.get_by_email
+        calls = 0
+
+        async def get_by_email_once_none(email: str) -> User | None:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return None
+            return await original_get_by_email(email)
+
+        monkeypatch.setattr(repo, "get_by_email", get_by_email_once_none)
+
+        with pytest.raises(EmailAlreadyRegistered) as exc:
+            await service.register(
+                UserCreate(email="ana@example.com", password="password123")
+            )
+
+        assert exc.value.status_code == 400
+        existing = await repo.get_by_email("ana@example.com")
+        assert existing is not None
 
 
 async def test_authenticate_valid_credentials(

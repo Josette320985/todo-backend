@@ -177,7 +177,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 #### `app/api/` (API Endpoints)
 
 - `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
-- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token.
+- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token. A duplicate email answers an explicit 400 (SEG-H05 accepts enumeration on registration; login stays generic).
 - `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks. Task ids are bounded to SQLite's signed 64-bit range (`1` to `2**63 - 1`), so an oversized id answers 422 instead of 500.
 
 #### `app/core/` (Configuration and Security)
@@ -206,7 +206,7 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 #### `app/services/` (Business Rules)
 
 - `task_service.py`: `TaskService` with `list_tasks`, `create_task`, `update_task` (allowlisted fields and the combined date-range check) and `delete_task`.
-- `auth_service.py`: `AuthService` with `register` (duplicate check, bcrypt in a worker thread) and `authenticate` (normalization, dummy hash for unknown emails, failure log).
+- `auth_service.py`: `AuthService` with `register` (duplicate check, `IntegrityError` race handled as `EmailAlreadyRegistered`, bcrypt in a worker thread) and `authenticate` (normalization, dummy hash for unknown emails, failure log).
 - These modules must not import FastAPI: `tests/test_architecture.py` enforces it.
 
 ---

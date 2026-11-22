@@ -10,6 +10,8 @@ import asyncio
 import logging
 from typing import Final
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.config import Settings
 from app.core.errors import EmailAlreadyRegistered, InvalidCredentials
 from app.core.logging import sanitize_for_log
@@ -42,7 +44,9 @@ class AuthService:
         Register a new user.
 
         Raises:
-            EmailAlreadyRegistered: If the email is already in use.
+            EmailAlreadyRegistered: If the email is already in use, including
+                when a concurrent registration wins the race and the unique
+                constraint is violated.
         """
         if await self._users.get_by_email(payload.email) is not None:
             raise EmailAlreadyRegistered()
@@ -51,7 +55,13 @@ class AuthService:
             hash_password, payload.password, self._settings.BCRYPT_ROUNDS
         )
         user: User = User(email=payload.email, hashed_password=hashed)
-        return await self._users.add(user)
+        try:
+            return await self._users.add(user)
+        except IntegrityError as exc:
+            # Two concurrent registrations can both pass the pre-check. The
+            # unique index on users.email is the source of truth; the
+            # repository has already rolled back the failed transaction.
+            raise EmailAlreadyRegistered() from exc
 
     async def authenticate(
         self, email: str, password: str, client_ip: str
