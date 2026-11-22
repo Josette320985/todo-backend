@@ -30,7 +30,10 @@ async def list_tasks_query(
 def query_plan(settings: Settings, statement: str, owner_id: int) -> str:
     db_file = Path(settings.DATABASE_URL.split("///", 1)[1])
     with sqlite3.connect(db_file) as conn:
-        rows = conn.execute(f"EXPLAIN QUERY PLAN {statement}", (owner_id,)).fetchall()
+        # owner_id first; any later placeholder (LIMIT/OFFSET since SEG-H12)
+        # gets a dummy value, which does not change the plan.
+        params = (owner_id,) + (1,) * (statement.count("?") - 1)
+        rows = conn.execute(f"EXPLAIN QUERY PLAN {statement}", params).fetchall()
     return " | ".join(str(row[-1]) for row in rows)
 
 

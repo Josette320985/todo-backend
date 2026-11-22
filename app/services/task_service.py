@@ -11,7 +11,7 @@ from datetime import date
 from typing import Any, Final
 
 from app.core.dates import date_range_error
-from app.core.errors import NotFoundError, ValidationFailed
+from app.core.errors import NotFoundError, TaskLimitReached, ValidationFailed
 from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
 from app.schemas.task import TaskCreate, TaskUpdate
@@ -21,6 +21,12 @@ ALLOWED_UPDATE_FIELDS: Final[frozenset[str]] = frozenset(
     {"title", "description", "completed", "start_date", "end_date"}
 )
 
+# SEG-H12: hard cap of tasks per user, and the largest page GET /tasks returns.
+# They are equal on purpose: a client that asks for one page without limit
+# still receives every task, so the current frontend keeps working.
+MAX_TASKS_PER_USER: Final[int] = 500
+MAX_PAGE_SIZE: Final[int] = MAX_TASKS_PER_USER
+
 
 class TaskService:
     """Task use cases, backed by a TaskRepository."""
@@ -28,12 +34,33 @@ class TaskService:
     def __init__(self, tasks: TaskRepository) -> None:
         self._tasks = tasks
 
-    async def list_tasks(self, owner_id: int) -> Sequence[Task]:
-        """Return every task owned by the user."""
-        return await self._tasks.list_by_owner(owner_id)
+    async def list_tasks(
+        self,
+        owner_id: int,
+        limit: int | None = None,
+        offset: int = 0,
+        completed: bool | None = None,
+    ) -> Sequence[Task]:
+        """
+        Return one page of the user's tasks, in the order of OPT-02.
+
+        The page is never larger than MAX_PAGE_SIZE (SEG-H12), even when the
+        caller asks for more or passes no limit.
+        """
+        page_size: int = min(limit or MAX_PAGE_SIZE, MAX_PAGE_SIZE)
+        return await self._tasks.list_by_owner(
+            owner_id, limit=page_size, offset=offset, completed=completed
+        )
 
     async def create_task(self, owner_id: int, payload: TaskCreate) -> Task:
-        """Create a task for the user."""
+        """
+        Create a task for the user.
+
+        Raises:
+            TaskLimitReached: If the user already has MAX_TASKS_PER_USER tasks.
+        """
+        if await self._tasks.count_by_owner(owner_id) >= MAX_TASKS_PER_USER:
+            raise TaskLimitReached()
         task: Task = Task(**payload.model_dump(), owner_id=owner_id)
         return await self._tasks.add(task)
 

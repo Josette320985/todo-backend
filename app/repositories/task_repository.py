@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from fastapi import Depends
-from sqlalchemy import CursorResult, Select, delete, select
+from sqlalchemy import CursorResult, Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -32,7 +32,11 @@ class TaskRepository:
         self.db = db
 
     async def list_by_owner(
-        self, owner_id: int, limit: int | None = None, offset: int = 0
+        self,
+        owner_id: int,
+        limit: int | None = None,
+        offset: int = 0,
+        completed: bool | None = None,
     ) -> Sequence[Task]:
         """
         Return the tasks of one user in a deterministic order (OPT-02).
@@ -40,19 +44,29 @@ class TaskRepository:
         Pending tasks first, then completed ones; inside each group by due
         date (tasks without end_date last) and finally by id, so two tasks
         never tie and the order is the same on every request. Pagination
-        (SEG-H12) relies on this order. limit=None returns every task.
+        (SEG-H12) relies on this order. limit=None returns every task;
+        completed=None does not filter by status.
         """
         query: Select[tuple[Task]] = (
             select(Task)
             .where(Task.owner_id == owner_id)
             .order_by(*TASK_LIST_ORDER)
         )
+        if completed is not None:
+            query = query.where(Task.completed == completed)
         if offset:
             query = query.offset(offset)
         if limit is not None:
             query = query.limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
+
+    async def count_by_owner(self, owner_id: int) -> int:
+        """Number of tasks the user has (SEG-H12 per-user cap)."""
+        result = await self.db.execute(
+            select(func.count()).select_from(Task).where(Task.owner_id == owner_id)
+        )
+        return int(result.scalar_one())
 
     async def get_owned(self, task_id: int, owner_id: int) -> Task | None:
         """Return the task only if it exists and belongs to owner_id."""

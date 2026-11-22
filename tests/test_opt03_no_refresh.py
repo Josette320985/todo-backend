@@ -4,7 +4,8 @@ OPT-03 · No db.refresh() after saving a task.
 Acceptance criterion: the POST response still includes the generated id and
 completed=false without the refresh. The query counts pin the saving:
 POST 3 -> 2 queries and PUT 4 -> 3 (one of them is the user lookup of the
-authentication dependency).
+authentication dependency). Since SEG-H12, POST adds one COUNT for the
+per-user cap, before the INSERT.
 """
 
 import httpx
@@ -33,9 +34,10 @@ async def test_post_returns_generated_values_without_refresh(
     assert body["title"] == "Sin refresh"
     assert body["description"] is None
 
-    # user lookup + INSERT; no SELECT back from tasks.
-    assert count_queries.count == 2, list(count_queries)
-    assert selects_on_tasks(count_queries) == []
+    # user lookup + per-user cap count (SEG-H12) + INSERT. The INSERT is the
+    # last statement: no SELECT reads the task back after saving it.
+    assert count_queries.count == 3, list(count_queries)
+    assert count_queries[-1].lstrip().upper().startswith("INSERT")
 
 
 async def test_put_returns_updated_values_without_refresh(
