@@ -90,9 +90,10 @@ async def update_task(
 
     Raises:
         NotFoundError: If the task does not exist or belongs to someone else (404).
-        ValidationFailed: If the resulting date range is invalid (422).
+        ValidationFailed: If the resulting date range is invalid (422). It uses
+            the single error format with ``field="end_date"``.
         RequestValidationError: If the task id is out of range or the payload
-            is invalid (422).
+            is invalid (422). Those errors also use the single error format.
     """
     return await service.update_task(task_id, current_user.id, payload)
 
