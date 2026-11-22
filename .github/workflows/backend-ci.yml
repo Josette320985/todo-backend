@@ -35,13 +35,18 @@ jobs:
         run: mypy
 
       # Slow tests (marked @pytest.mark.slow) are excluded from every push;
-      # they will run on a schedule together with the E2E suite (TEST-09).
-      # Coverage is reported from day 1; the 80% gate on services/ and
-      # repositories/ is added after the refactor (ARQ-02, ARQ-04).
+      # they run in backend-nightly.yml, together with the E2E suite (TEST-09).
       - name: Tests with coverage
         run: >
           pytest -m "not slow"
           --cov=app --cov-report=term-missing --cov-report=xml
+
+      # Gate from TEST-10: at least 80% on the layers created by the refactor
+      # (ARQ-02 repositories, ARQ-04 services). No global target on purpose.
+      - name: Coverage gate (services/ and repositories/ >= 80%)
+        run: >
+          coverage report --fail-under=80
+          --include="app/services/*,app/repositories/*"
 
       - name: Upload coverage report
         if: always()
