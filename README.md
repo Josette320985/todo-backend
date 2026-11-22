@@ -57,7 +57,11 @@ cd todo-backend
 cp .env.example .env
 ```
 
-*Note: Open the `.env` file and replace `SECRET_KEY` with a strong, randomly generated secret key of at least 32 characters.*
+*Note: The app refuses to start until `SECRET_KEY` is set. Generate a strong, random secret key into the `.env` file with:*
+
+```bash
+python -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(48))" >> .env
+```
 
 **3. Build and start the Docker containers (Frontend and Backend):**
 
@@ -79,10 +83,44 @@ Once the containers are running and the services are ready, open your web browse
   - Register, log in, create, edit, complete, and delete tasks.
 
 - **API Documentation (Swagger UI):** http://localhost:3000/api/docs
-  - Explore and test the available API endpoints (GET, POST, PUT, DELETE).
+  - Only with `ENVIRONMENT=development` in `.env`; the default (`production`) answers 404 so the API schema is not public (SEG-H07).
+  - Behind Nginx the Content-Security-Policy blocks the CDN that Swagger UI and ReDoc load from, so the page stays blank; `/api/openapi.json` works. To use the interactive UI, run the backend directly (`uvicorn app.main:app --reload`) and open http://localhost:8000/api/docs.
 
 - **Server Status (Health Check):** http://localhost:3000/api/health
-  - Check whether the API service is responding.
+  - Liveness: the API process is responding. It does not touch the database.
+- **Readiness:** http://localhost:3000/api/health/ready
+  - `200` when the API can reach its database (`SELECT 1` within 2 s), `503` otherwise (ERR-05). Docker Compose uses it as the backend healthcheck, so `docker compose ps` shows `unhealthy` and Nginx does not start while the database is unavailable. The reason is in `docker compose logs backend`.
+
+The stack is published only on `127.0.0.1:3000`, so it is reachable from this machine and not from the rest of the network (SEG-H13).
+
+---
+
+## Deploying with HTTPS (required)
+
+Nginx in this stack serves **plain HTTP only**. Without TLS, passwords and JWT tokens travel in clear text, so **any deployment that other people can reach must put an HTTPS proxy in front** (Caddy, Traefik, a cloud load balancer or another Nginx with a certificate). Never change the port mapping to `3000:80` or `0.0.0.0:3000:80` to "publish" the app.
+
+The proxy must:
+
+1. Terminate TLS and forward to `http://127.0.0.1:3000`.
+2. Redirect HTTP (port 80) to HTTPS.
+3. Set (overwrite, not append) `X-Forwarded-Proto: https`. With it, the stack's Nginx adds `Strict-Transport-Security: max-age=31536000` to every response. Without it, HSTS is not sent.
+
+Minimal example with Caddy (automatic certificates):
+
+```caddyfile
+todo.example.com {
+    reverse_proxy 127.0.0.1:3000 {
+        header_up X-Forwarded-Proto https
+    }
+}
+```
+
+Check after deploying:
+
+```bash
+curl -sI https://todo.example.com/ | grep -i strict-transport-security
+curl -sI http://todo.example.com/  # must be a redirect to https://
+```
 
 ---
 
@@ -93,6 +131,30 @@ When you finish using the application or need to stop the services, run the foll
 ```bash
 docker compose down
 ```
+
+### Run the tests
+
+Every test builds its own app with `create_app(settings)`: a temporary SQLite database, a random `SECRET_KEY` and the minimum bcrypt cost (`BCRYPT_ROUNDS=4`), so tests never touch `.env` or `data/todo.db` and the whole suite runs in seconds:
+
+```bash
+pip install -r requirements-dev.txt
+pytest                      # everything
+pytest -m "not slow"        # what the CI runs on every push
+pytest tests/security       # security regression suite
+```
+
+Shared fixtures live in `tests/conftest.py`:
+
+| Fixture | What it gives you |
+|---|---|
+| `settings`, `app` | The test settings and the app built from them. |
+| `client` | In-process `httpx.AsyncClient`, inside the app lifespan. |
+| `make_user(email)` | Registers and logs in a user; returns a `TestUser` (`id`, `email`, `token`, `headers`). |
+| `user`, `auth_headers` | The default user and its Bearer header. |
+| `other_user` | A second user, to test access to someone else's data. |
+| `count_queries` | List of the SQL statements the app executed (call `.clear()` before the request you measure). |
+
+Mark long-running tests with `@pytest.mark.slow`. Security tests and their checklist live in `tests/security/`; service tests live in `tests/services/`, and `tests/test_architecture.py` checks that `app/services` never imports FastAPI.
 
 ---
 
@@ -110,23 +172,25 @@ docker compose down
 
 ### `app/` Directory (Source Code)
 
-- `main.py`: Main application entry point. Configures CORS, initializes database tables, registers API routers, and defines the health-check endpoint.
+- `main.py`: Main application entry point. `create_app(settings)` builds an app with its own settings, database engine and session factory, configures CORS and security headers, registers the API routers and the liveness (`/api/health`) and readiness (`/api/health/ready`) endpoints. `app = create_app()` is the instance served by uvicorn; tests can create several apps with different settings in the same process.
 
 #### `app/api/` (API Endpoints)
 
-- `deps.py`: Shared API dependencies. Contains the `get_current_user()` function, which validates JWT access tokens and retrieves the authenticated user for protected endpoints.
-- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Handles user registration, password verification, and JWT access token generation.
-- `v1/tasks.py`: Task CRUD endpoints. Filters tasks by `owner_id` to ensure users can only access and modify their own tasks.
+- `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
+- `v1/auth.py`: Authentication endpoints (`/register` and `/login`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token.
+- `v1/tasks.py`: Task CRUD endpoints. Delegates the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks.
 
 #### `app/core/` (Configuration and Security)
 
-- `config.py`: Loads application settings from environment variables using Pydantic Settings.
+- `config.py`: Loads application settings from environment variables using Pydantic Settings. `get_settings()` (cached) is the FastAPI dependency that endpoints use; `create_app()` overrides it with the settings it receives.
 - `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
+- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`) and the handler that translates them to JSON, so services never import FastAPI or build HTTP responses.
+- `dates.py`: The single date-range rule (`date_range_error`) shared by the task schemas and `TaskService`.
 
 #### `app/db/` (Database)
 
 - `base.py`: Defines the SQLAlchemy declarative base class used by the database models.
-- `session.py`: Configures the asynchronous SQLAlchemy database engine and session factory using SQLite with `aiosqlite`.
+- `session.py`: Creates the asynchronous SQLAlchemy engine and session factory (SQLite with `aiosqlite`). `get_db()` opens a session from the factory of the app that received the request.
 
 #### `app/models/` (SQLAlchemy Models)
 
@@ -138,6 +202,12 @@ docker compose down
 - `user.py`: Defines schemas for validating user registration data and returning user information without exposing password hashes.
 - `task.py`: Defines schemas for creating, updating, and returning task information.
 - `token.py`: Defines the structure of the JWT authentication response.
+
+#### `app/services/` (Business Rules)
+
+- `task_service.py`: `TaskService` with `list_tasks`, `create_task`, `update_task` (allowlisted fields and the combined date-range check) and `delete_task`.
+- `auth_service.py`: `AuthService` with `register` (duplicate check, bcrypt in a worker thread) and `authenticate` (normalization, dummy hash for unknown emails, failure log).
+- These modules must not import FastAPI: `tests/test_architecture.py` enforces it.
 
 ---
 

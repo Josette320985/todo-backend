@@ -1,4 +1,5 @@
-from typing import Final, Literal
+from functools import lru_cache
+from typing import ClassVar, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,11 +23,18 @@ class Settings(BaseSettings):
     # JWT access token expiration time in minutes (1 min to 24 hours).
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=1, le=1440)
 
+    # bcrypt cost factor (2^rounds iterations). 12 in production; tests use
+    # the minimum (4) so hashing does not dominate the suite's run time.
+    BCRYPT_ROUNDS: int = Field(default=12, ge=4, le=31)
+
     # Algorithm used for JWT signing and verification (restricted to HS256).
     ALGORITHM: Literal["HS256"] = "HS256"
 
     # Deployment environment ("development" or "production").
     ENVIRONMENT: str = "development"
+
+    # Minimum level emitted by the application and uvicorn loggers.
+    LOG_LEVEL: str = "INFO"
 
     # Allowed CORS origins for the frontend application.
     CORS_ORIGINS: list[str] = [
@@ -35,13 +43,30 @@ class Settings(BaseSettings):
         "http://localhost:8080",
     ]
 
+    # Public placeholder values that must never reach a running deployment.
+    _KNOWN_PLACEHOLDERS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "reemplaza-esta-clave-por-una-larga-y-aleatoria-de-al-menos-32-caracteres",
+        }
+    )
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, value: str) -> str:
         stripped: str = value.strip()
         if len(stripped) < 32:
             raise ValueError(
-                "SECRET_KEY debe tener al menos 32 caracteres no vacíos"
+                "SECRET_KEY debe tener al menos 32 caracteres no vacíos; "
+                "genere uno con secrets.token_urlsafe(48)"
+            )
+        if (
+            stripped in cls._KNOWN_PLACEHOLDERS
+            or "reemplaza" in stripped.lower()
+            or len(set(stripped)) < 16
+        ):
+            raise ValueError(
+                "SECRET_KEY es un valor de ejemplo o débil; "
+                "genere uno con secrets.token_urlsafe(48)"
             )
         return stripped
 
@@ -49,5 +74,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
-# Create a shared application settings instance.
-settings: Final[Settings] = Settings()
+@lru_cache
+def get_settings() -> Settings:
+    """
+    Return the settings loaded from the environment and the .env file.
+
+    Cached so the environment is read once per process. Endpoints receive
+    settings through Depends(get_settings); create_app() overrides this
+    dependency with the Settings it was given, so tests can build apps
+    with their own configuration without touching environment variables.
+    """
+    return Settings()

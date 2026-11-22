@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
-from typing import Final
 
+from fastapi import Request
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -8,29 +8,34 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.core.config import settings
 
-# Create the asynchronous database engine using the configured URL.
-engine: Final[AsyncEngine] = create_async_engine(
-    settings.DATABASE_URL, echo=False, future=True
-)
-
-# Configure a factory for creating asynchronous database sessions.
-# Keep ORM objects accessible after committing a transaction.
-AsyncSessionLocal: Final[async_sessionmaker[AsyncSession]] = async_sessionmaker(
-    engine, expire_on_commit=False, class_=AsyncSession
-)
+def create_engine(database_url: str) -> AsyncEngine:
+    """Create the asynchronous database engine for the given URL."""
+    return create_async_engine(database_url, echo=False, future=True)
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """
+    Create a factory of asynchronous sessions bound to the engine.
+
+    Keeps ORM objects accessible after committing a transaction.
+    """
+    return async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
     """
     Provide an asynchronous database session for FastAPI dependencies.
 
-    Creates a database session for the request and automatically
-    closes it when the dependency finishes.
+    Uses the session factory of the app that received the request (set by
+    create_app), so each app instance talks to its own database. The
+    session is closed when the dependency finishes.
 
     Yields:
         AsyncSession: Active asynchronous database session.
     """
-    async with AsyncSessionLocal() as session:
+    session_factory: async_sessionmaker[AsyncSession] = (
+        request.app.state.session_factory
+    )
+    async with session_factory() as session:
         yield session

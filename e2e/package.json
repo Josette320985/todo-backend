@@ -1,0 +1,20 @@
+{
+  "name": "todo-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "E2E with Playwright over docker-compose (Nginx + backend reales) — TEST-09",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "stack:up": "docker compose -p todo-e2e -f ../docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait",
+    "stack:down": "docker compose -p todo-e2e -f ../docker-compose.yml -f docker-compose.e2e.yml down -v --remove-orphans"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "^26.6.6",
+    "typescript": "^5.8.2"
+  }
+}

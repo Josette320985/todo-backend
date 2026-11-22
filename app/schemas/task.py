@@ -9,12 +9,13 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.dates import date_range_error
+
 
 def _check_dates(start: date | None, end: date | None) -> None:
-    if start and end and end < start:
-        raise ValueError(
-            "La fecha de término no puede ser anterior a la fecha de inicio"
-        )
+    message: str | None = date_range_error(start, end)
+    if message is not None:
+        raise ValueError(message)
 
 
 class TaskCreate(BaseModel):

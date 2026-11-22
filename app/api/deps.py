@@ -3,12 +3,13 @@ from typing import Any, Final
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from sqlalchemy import Result, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.db.session import get_db
+from app.core.config import Settings, get_settings
 from app.models.user import User
+from app.repositories.task_repository import TaskRepository, get_task_repository
+from app.repositories.user_repository import UserRepository, get_user_repository
+from app.services.auth_service import AuthService
+from app.services.task_service import TaskService
 
 # Extract the Bearer token from the Authorization header.
 # The token URL identifies the authentication endpoint.
@@ -19,7 +20,8 @@ oauth2_scheme: Final[OAuth2PasswordBearer] = OAuth2PasswordBearer(
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
+    users: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings),
 ) -> User:
     """
     Validate a JWT access token and retrieve the authenticated user.
@@ -30,7 +32,8 @@ async def get_current_user(
 
     Args:
         token (str): JWT access token extracted from the request.
-        db (AsyncSession): Asynchronous database session.
+        users (UserRepository): Data access for users.
+        settings (Settings): Settings of the app handling the request.
 
     Returns:
         User: The authenticated user retrieved from the database.
@@ -62,13 +65,25 @@ async def get_current_user(
         raise credentials_exception
 
     # Retrieve the user associated with the validated token.
-    result: Result[tuple[User]] = await db.execute(
-        select(User).where(User.id == parsed_user_id)
-    )
-    user: User | None = result.scalar_one_or_none()
+    user: User | None = await users.get_by_id(parsed_user_id)
 
-    # Reject authentication if the user no longer exists.
-    if user is None:
+    # Reject if the user no longer exists or the token was revoked (logout).
+    if user is None or payload.get("ver") != user.token_version:
         raise credentials_exception
 
     return user
+
+
+def get_task_service(
+    tasks: TaskRepository = Depends(get_task_repository),
+) -> TaskService:
+    """FastAPI dependency: a TaskService bound to the request's repository."""
+    return TaskService(tasks)
+
+
+def get_auth_service(
+    users: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings),
+) -> AuthService:
+    """FastAPI dependency: an AuthService bound to the request's repository."""
+    return AuthService(users, settings)
