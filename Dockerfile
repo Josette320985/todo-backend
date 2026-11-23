@@ -4,7 +4,7 @@ FROM python:3.14-slim
 # PERF-03: number of Uvicorn worker processes. Uvicorn reads WEB_CONCURRENCY when --workers is not given, so the CMD stays free of it and the value can be
 # changed from .env / docker-compose without rebuilding. Use 2 to 4 depending on the CPUs of the host (4 measured: GET /tasks 934 -> 1,687 req/s).
 # It needs OPT-05 (WAL, so that several processes can use SQLite at once).
-# KNOWN LIMIT: the login/register rate limit lives in each process's memory, so the real limit is (limit x workers) until it is shared (see docs/PERF-03-*.md).
+# The rate limit counters are shared by the workers through data/todo.rate_limit.db (BUG-02), so the limit does not grow with the number of workers.
 ENV WEB_CONCURRENCY=4
 
 # Set the working directory inside the container.

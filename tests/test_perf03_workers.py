@@ -8,9 +8,7 @@ PRAGMAs that make several processes safe (OPT-05) are still there.
 Live checks (marker "slow"): start the real app with uvicorn --workers 4 on a
 throwaway database and check that (a) 4 worker processes are running, (b) a burst
 of concurrent GET and POST requests has no errors and no "database is locked",
-and (c) the login rate limit is shared between workers. (c) is a known gap and
-is marked as a strict xfail: when the limit is shared, the test starts passing,
-pytest reports it as a failure and the marker must be removed.
+and (c) the login rate limit is shared between workers (BUG-02).
 
 Run the live checks with:  pytest tests/test_perf03_workers.py -m slow
 """
@@ -18,6 +16,7 @@ Run the live checks with:  pytest tests/test_perf03_workers.py -m slow
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -148,7 +147,8 @@ def server(tmp_path: Path) -> Iterator[Server]:
     env = {
         **os.environ,
         "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'perf03.db'}",
-        "SECRET_KEY": "perf03-" + "k3y-" * 12 + "Zx9",
+        # Random: SEG-01 rejects repetitive keys, and the app would not start.
+        "SECRET_KEY": secrets.token_urlsafe(48),
         "ENVIRONMENT": "production",
         "WEB_CONCURRENCY": str(WORKERS),  # what the Dockerfile ENV provides
     }
@@ -219,12 +219,15 @@ def test_concurrent_reads_and_writes_have_no_errors(server: Server) -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(
-    strict=True,
-    reason="PERF-03 prerequisite pending: the rate limit is per process, so with 4 "
-    "workers the real limit is about 4x. Remove this marker once it is shared.",
-)
 def test_login_rate_limit_is_shared_between_workers(server: Server) -> None:
-    # Distinct emails: only the per-IP limit (10/min) applies, not the per-pair one.
-    statuses = [server.login(f"nobody{i}@example.com", "wrong-password-1")[0] for i in range(25)]
-    assert statuses.count(429) == 15, statuses
+    # Distinct emails: only the per-IP limit (10/min) applies, not the per-pair
+    # one. Sent all at once: one request after another tends to land on the same
+    # worker, which hides per-process counters; a burst spreads over all four.
+    def attempt(i: int) -> int:
+        return server.login(f"nobody{i}@example.com", "wrong-password-1")[0]
+
+    with ThreadPoolExecutor(max_workers=40) as pool:
+        statuses = list(pool.map(attempt, range(40)))
+
+    assert statuses.count(401) == 10, statuses
+    assert statuses.count(429) == 30, statuses

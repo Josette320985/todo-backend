@@ -1,28 +1,36 @@
-"""Sliding-window rate limiter (ARQ-05).
+"""Sliding-window rate limiter (ARQ-05), shared between workers (BUG-02).
 
 Moved out of ``app/api/v1/auth.py`` so the limiter is a module of its own:
 
 * ``RateLimiter.check(key)`` raises ``RateLimited(retry_after)`` instead of an
   ``HTTPException``; ERR-03 turns ``retry_after`` into the ``Retry-After``
-  header and SEG-02 extends this class (failed attempts only, per-email
-  limit) instead of ``auth.py``.
+  header and SEG-02 builds ``LoginRateLimiter`` on top of it.
 * The clock is injectable, so tests move time forward without ``sleep``.
-* Memory is bounded: buckets whose window has passed are deleted, and the
+* Storage is bounded: attempts that left the window are deleted, and the
   number of tracked keys never exceeds ``max_keys``.
 * There is no module-level state. ``create_app`` builds the limiters and
-  keeps them in ``app.state`` (ARQ-01), so two apps never share counters.
+  keeps them in ``app.state`` (ARQ-01).
 
-``check`` is synchronous and has no ``await``, so on a single event loop one
-call can never interleave with another. The state is per process: with
-several uvicorn workers (PERF-03) every worker keeps its own counters and the
-effective limit is multiplied by the number of workers.
+The attempts live in SQLite. With several uvicorn workers (PERF-03) every
+worker opens the same file (``rate_limit_path``), so the limit is the same
+whichever process answers; each ``check`` runs in a ``BEGIN IMMEDIATE``
+transaction, so counting and recording an attempt is atomic across processes.
+Without a file (``path=":memory:"``, the default) the counters belong to that
+limiter alone: unit tests and separate apps never share them.
+
+``check`` stays synchronous: it is a few indexed statements on a local file,
+far below the cost of the bcrypt run it protects.
 """
 
 import math
+import sqlite3
 import time
-from collections import OrderedDict, deque
+import weakref
 from collections.abc import Callable
+from pathlib import Path
 from typing import Final
+
+from sqlalchemy.engine import make_url
 
 from app.core.emails import normalize_email
 from app.core.errors import RateLimited
@@ -38,12 +46,43 @@ MAX_REGISTER_ATTEMPTS_PER_WINDOW: Final[int] = 5
 MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW: Final[int] = 15
 
 # Upper bound for the tracked keys of one limiter. Each key keeps at most
-# ``max_attempts`` floats, so memory stays bounded however many distinct
+# ``max_attempts`` rows, so storage stays bounded however many distinct
 # clients (or forged keys) show up.
 DEFAULT_MAX_KEYS: Final[int] = 10_000
 
-# Returns the current time in seconds. It must be monotonic.
+# How long a worker waits for another one holding the write lock.
+_BUSY_TIMEOUT_SECONDS: Final[float] = 5.0
+
+# Returns the current time in seconds. Wall-clock time, not monotonic: the
+# attempts are shared between processes and survive a restart, and a
+# monotonic clock starts again from zero on every boot.
 Clock = Callable[[], float]
+
+_SCHEMA: Final[tuple[str, ...]] = (
+    "CREATE TABLE IF NOT EXISTS rate_limit_attempts ("
+    " limiter TEXT NOT NULL, key TEXT NOT NULL, at REAL NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS ix_rate_limit_attempts_key"
+    " ON rate_limit_attempts (limiter, key, at)",
+    "CREATE INDEX IF NOT EXISTS ix_rate_limit_attempts_at"
+    " ON rate_limit_attempts (limiter, at)",
+)
+
+
+def rate_limit_path(database_url: str) -> str:
+    """
+    File for the shared counters, next to the SQLite database of the app.
+
+    ``data/todo.db`` gives ``data/todo.rate_limit.db``: every worker of the
+    same deployment opens the same file, and every test app (its own
+    database in ``tmp_path``) gets its own. Anything else (an in-memory
+    database, another engine) keeps the counters in memory, per process.
+    """
+    url = make_url(database_url)
+    database: str | None = url.database
+    if url.get_backend_name() != "sqlite" or not database or database == ":memory:":
+        return ":memory:"
+    db_file = Path(database)
+    return str(db_file.with_name(f"{db_file.stem}.rate_limit.db"))
 
 
 class RateLimiter:
@@ -53,19 +92,15 @@ class RateLimiter:
     Every accepted call is recorded; a rejected call is not, so a blocked
     client is released ``window_seconds`` after its oldest recorded call.
 
-    * ``RateLimiter.check(key)`` raises ``RateLimited(retry_after)`` instead of an
-    ``HTTPException``; ERR-03 turns ``retry_after`` into the ``Retry-After``
-    header.
-    * ``LoginRateLimiter`` (SEG-02) counts only the failed logins, per IP and per
-    IP + email. It lives here and not in ``auth.py``.
-    
     Args:
         max_attempts (int): Calls allowed per key inside the window.
         window_seconds (float): Length of the sliding window.
         max_keys (int): Maximum number of keys tracked at once. When it is
-            reached and no bucket has expired, the least recently used key is
-            dropped to make room.
+            reached, the least recently used key is dropped to make room.
         clock (Clock): Time source. Tests pass a fake one.
+        path (str): SQLite file shared by the workers (``rate_limit_path``),
+            or ``":memory:"`` for counters private to this limiter.
+        name (str): Separates the limiters that share one file.
     """
 
     def __init__(
@@ -74,7 +109,9 @@ class RateLimiter:
         max_attempts: int,
         window_seconds: float = RATE_LIMIT_WINDOW_SECONDS,
         max_keys: int = DEFAULT_MAX_KEYS,
-        clock: Clock = time.monotonic,
+        clock: Clock = time.time,
+        path: str = ":memory:",
+        name: str = "default",
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -85,14 +122,20 @@ class RateLimiter:
         self.max_attempts: Final[int] = max_attempts
         self.window_seconds: Final[float] = window_seconds
         self.max_keys: Final[int] = max_keys
+        self.name: Final[str] = name
         self._clock: Final[Clock] = clock
-        # Ordered from least to most recently used: a key moves to the end
-        # every time a call is accepted, so expired buckets pile up in front.
-        self._buckets: OrderedDict[str, deque[float]] = OrderedDict()
+        self._path: Final[str] = path
+        # Opened on first use: an app that never limits anything (most test
+        # apps) never opens the file.
+        self._connection: sqlite3.Connection | None = None
 
     def __len__(self) -> int:
         """Number of keys currently tracked."""
-        return len(self._buckets)
+        row = self._db().execute(
+            "SELECT COUNT(DISTINCT key) FROM rate_limit_attempts WHERE limiter = ?",
+            (self.name,),
+        ).fetchone()
+        return int(row[0])
 
     def check(self, key: str) -> None:
         """
@@ -104,22 +147,35 @@ class RateLimiter:
                 until the oldest recorded call leaves the window.
         """
         now: float = self._clock()
-        self._drop_expired(now)
-
-        bucket: deque[float] | None = self._buckets.get(key)
-        if bucket is not None:
-            while bucket and self._expired(bucket[0], now):
-                bucket.popleft()
-            if len(bucket) >= self.max_attempts:
-                retry_after: float = bucket[0] + self.window_seconds - now
-                raise RateLimited(max(1, math.ceil(retry_after)))
-        else:
-            if len(self._buckets) >= self.max_keys:
-                self._buckets.popitem(last=False)
-            bucket = self._buckets[key] = deque()
-
-        bucket.append(now)
-        self._buckets.move_to_end(key)
+        db = self._db()
+        retry_after: int | None = None
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            # A call leaves the window exactly ``window_seconds`` after it.
+            db.execute(
+                "DELETE FROM rate_limit_attempts WHERE limiter = ? AND at <= ?",
+                (self.name, now - self.window_seconds),
+            )
+            count, oldest = db.execute(
+                "SELECT COUNT(*), MIN(at) FROM rate_limit_attempts"
+                " WHERE limiter = ? AND key = ?",
+                (self.name, key),
+            ).fetchone()
+            if count >= self.max_attempts:
+                retry_after = max(1, math.ceil(oldest + self.window_seconds - now))
+            else:
+                if count == 0:
+                    self._make_room(db)
+                db.execute(
+                    "INSERT INTO rate_limit_attempts (limiter, key, at) VALUES (?, ?, ?)",
+                    (self.name, key, now),
+                )
+            db.execute("COMMIT")
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+        if retry_after is not None:
+            raise RateLimited(retry_after)
 
     def forgive(self, key: str) -> None:
         """
@@ -128,34 +184,56 @@ class RateLimiter:
         ``check`` records the call before the work it protects runs, so
         concurrent requests cannot all slip past the limit. Callers that only
         want to count failures forgive the call once the work succeeded.
-        The key keeps its place in the eviction order: it is freed when it
-        reaches the front or on its next ``check``.
         """
-        bucket: deque[float] | None = self._buckets.get(key)
-        if bucket is None:
+        self._db().execute(
+            "DELETE FROM rate_limit_attempts WHERE rowid = ("
+            " SELECT rowid FROM rate_limit_attempts WHERE limiter = ? AND key = ?"
+            " ORDER BY at DESC, rowid DESC LIMIT 1)",
+            (self.name, key),
+        )
+
+    def close(self) -> None:
+        """Close the connection; the next call opens it again."""
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def _make_room(self, db: sqlite3.Connection) -> None:
+        """Before adding a new key, drop the least recently used one if full."""
+        (keys,) = db.execute(
+            "SELECT COUNT(DISTINCT key) FROM rate_limit_attempts WHERE limiter = ?",
+            (self.name,),
+        ).fetchone()
+        if keys < self.max_keys:
             return
-        if bucket:
-            bucket.pop()
-        if not bucket:
-            del self._buckets[key]
+        db.execute(
+            "DELETE FROM rate_limit_attempts WHERE limiter = ? AND key = ("
+            " SELECT key FROM rate_limit_attempts WHERE limiter = ?"
+            " GROUP BY key ORDER BY MAX(at), MAX(rowid) LIMIT 1)",
+            (self.name, self.name),
+        )
 
-    def _expired(self, timestamp: float, now: float) -> bool:
-        """A call leaves the window exactly ``window_seconds`` after it."""
-        return now - timestamp >= self.window_seconds
-
-    def _drop_expired(self, now: float) -> None:
-        """
-        Delete the buckets whose newest call already left the window.
-
-        Keys are ordered by their last accepted call, so it is enough to look
-        at the front: the work is amortized O(1) per ``check``. A key that
-        never comes back is therefore freed by the next call of any key.
-        """
-        while self._buckets:
-            oldest_key, bucket = next(iter(self._buckets.items()))
-            if bucket and not self._expired(bucket[-1], now):
-                return
-            del self._buckets[oldest_key]
+    def _db(self) -> sqlite3.Connection:
+        if self._connection is None:
+            # Autocommit mode: ``check`` opens its own BEGIN IMMEDIATE. The
+            # event loop calls the limiter from a single thread, but not
+            # always the thread that created it.
+            connection = sqlite3.connect(
+                self._path,
+                timeout=_BUSY_TIMEOUT_SECONDS,
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            if self._path != ":memory:":
+                connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
+            for statement in _SCHEMA:
+                connection.execute(statement)
+            # Closed with the limiter even if nobody calls close() (a test,
+            # an app replaced in app.state): no ResourceWarning on collection.
+            weakref.finalize(self, connection.close)
+            self._connection = connection
+        return self._connection
 
 
 # Longest email kept in a key. The nginx body limit already bounds the request;
@@ -212,6 +290,11 @@ class LoginRateLimiter:
         """Forgive the attempt recorded by ``check``: the login did not fail."""
         self.per_ip.forgive(ip)
         self.per_pair.forgive(self._pair_key(ip, email))
+
+    def close(self) -> None:
+        """Close the connections of both limiters."""
+        self.per_ip.close()
+        self.per_pair.close()
 
     @staticmethod
     def _pair_key(ip: str, email: str) -> str:

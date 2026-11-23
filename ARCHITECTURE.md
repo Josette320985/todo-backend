@@ -38,8 +38,10 @@ fechas, emails) y `app/schemas/` (Pydantic de entrada y salida).
    `os.environ`. Si es inválida, el arranque termina con una línea (ERR-09).
 6. **Un error, un formato.** Toda respuesta de error sale de los handlers de
    `app/core/errors.py` (ERR-01/ERR-02), en español.
-7. **Sin estado global mutable.** Los contadores del rate limiter viven en
-   `app.state`, no en el módulo: dos apps (o dos pruebas) nunca los comparten.
+7. **Sin estado global mutable.** Los limitadores viven en `app.state`, no en
+   el módulo, y guardan sus contadores en un SQLite junto a la base
+   (`rate_limit_path`): los workers de un despliegue los comparten (BUG-02) y
+   dos apps (o dos pruebas) con bases distintas nunca.
 8. **Nada sensible en logs.** Pasa por `sanitize_for_log`; nunca tokens,
    contraseñas ni la `SECRET_KEY`.
 
