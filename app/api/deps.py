@@ -1,10 +1,11 @@
 from typing import Any, Final
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 import jwt
 
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import RateLimiter
 from app.models.user import User
 from app.repositories.task_repository import TaskRepository, get_task_repository
 from app.repositories.user_repository import UserRepository, get_user_repository
@@ -87,3 +88,15 @@ def get_auth_service(
 ) -> AuthService:
     """FastAPI dependency: an AuthService bound to the request's repository."""
     return AuthService(users, settings)
+
+# --- Funciones nuevas (al final del archivo, después de get_auth_service) ---
+def get_login_limiter(request: Request) -> RateLimiter:
+    """FastAPI dependency: the login rate limiter of the app (ARQ-05)."""
+    limiter: RateLimiter = request.app.state.login_limiter
+    return limiter
+
+
+def get_register_limiter(request: Request) -> RateLimiter:
+    """FastAPI dependency: the registration rate limiter of the app (ARQ-05)."""
+    limiter: RateLimiter = request.app.state.register_limiter
+    return limiter
