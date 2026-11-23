@@ -31,8 +31,9 @@ class Task(Base):
     end_date: Mapped[date | None] = mapped_column(Date, default=None)
 
 
-    # Foreign key linking the task to its owner.
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # Foreign key linking the task to its owner. Indexed because every
+    # task query filters by owner (OPT-01, migration 0003).
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
     # ORM relationship with the User model.
     owner: Mapped["User"] = relationship(back_populates="tasks")

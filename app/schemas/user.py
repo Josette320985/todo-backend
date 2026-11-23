@@ -1,22 +1,52 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from typing import Annotated
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
+
+from app.core.emails import normalize_email
+
+NormalizedEmail = Annotated[EmailStr, AfterValidator(normalize_email)]
+_email_adapter: TypeAdapter[str] = TypeAdapter(NormalizedEmail)
+
+
+class EmailValidationRequest(BaseModel):
+    email: str = Field(max_length=2048)
+
+
+class EmailValidationResult(BaseModel):
+    valid: bool
+    normalized: str | None = None
+    message: str | None = None
+
+
+def check_registration_email(value: str) -> EmailValidationResult:
+    """Use the registration field itself; never query account availability or DNS."""
+    try:
+        normalized = _email_adapter.validate_python(value)
+    except (ValidationError, ValueError):
+        return EmailValidationResult(valid=False, message="El email no es válido")
+    return EmailValidationResult(valid=True, normalized=normalized)
 
 
 class UserCreate(BaseModel):
     """
     Schema for registering a new user.
 
-    Validates the email address format and requires a password
-    between 8 and 72 characters ( maximum 72 UTF-8 bytes for bcrypt )
+    Validates and normalizes the email address (Unicode/IDN) and requires a
+    password between 8 and 72 characters ( maximum 72 UTF-8 bytes for bcrypt )
     containing at least one letter and one digit.
     """
 
-    email: EmailStr
+    email: NormalizedEmail
     password: str = Field(min_length=8, max_length=72)
-
-    @field_validator("email")
-    @classmethod
-    def normalize_email(cls, value: EmailStr) -> str:
-        return str(value).strip().lower()
 
     @field_validator("password")
     @classmethod

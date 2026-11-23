@@ -1,0 +1,133 @@
+"""Business rules for tasks.
+
+The endpoints only authenticate the user and call these methods. Ownership is
+still enforced by the repository (a foreign task is reported as missing), and
+the resulting date range is validated here because a partial update must be
+checked against the values already stored, not only the ones in the request.
+"""
+
+from collections.abc import Sequence
+from datetime import date
+from typing import Any, Final
+
+from app.core.dates import date_range_error
+from app.core.errors import NotFoundError, TaskLimitReached, ValidationFailed
+from app.utils.task_sorting import (
+    DEFAULT_SORT_ORDER,
+    DEFAULT_TASK_SORT,
+    SortOrder,
+    TaskSortField,
+)
+from app.models.task import Task
+from app.repositories.task_repository import TaskRepository
+from app.schemas.task import TaskCreate, TaskUpdate
+
+# Allowed mutable fields on a Task ORM instance during partial updates.
+ALLOWED_UPDATE_FIELDS: Final[frozenset[str]] = frozenset(
+    {"title", "description", "completed", "start_date", "end_date"}
+)
+
+# SEG-H12: hard cap of tasks per user, and the largest page GET /tasks returns.
+# They are equal on purpose: a client that asks for one page without limit
+# still receives every task, so the current frontend keeps working.
+MAX_TASKS_PER_USER: Final[int] = 500
+MAX_PAGE_SIZE: Final[int] = MAX_TASKS_PER_USER
+
+
+class TaskService:
+    """Task use cases, backed by a TaskRepository."""
+
+    def __init__(self, tasks: TaskRepository) -> None:
+        self._tasks = tasks
+
+    async def list_tasks(
+        self,
+        owner_id: int,
+        limit: int | None = None,
+        offset: int = 0,
+        completed: bool | None = None,
+        sort_by: Sequence[TaskSortField] | None = None,
+        order: SortOrder = DEFAULT_SORT_ORDER,
+    ) -> Sequence[Task]:
+        """
+        Return one page of the user's tasks.
+
+        The order is OPT-02's (the repository fallback) unless the caller
+        passes sort_by.
+
+        The page is never larger than MAX_PAGE_SIZE (SEG-H12), even when the
+        caller asks for more or passes no limit.
+        """
+        page_size: int = min(limit or MAX_PAGE_SIZE, MAX_PAGE_SIZE)
+        return await self._tasks.list_by_owner(
+            owner_id,
+            limit=page_size,
+            offset=offset,
+            completed=completed,
+            sort_by=sort_by,
+            order=order,
+        )
+
+    async def create_task(self, owner_id: int, payload: TaskCreate) -> Task:
+        """
+        Create a task for the user.
+
+        Raises:
+            TaskLimitReached: If the user already has MAX_TASKS_PER_USER tasks.
+        """
+        if await self._tasks.count_by_owner(owner_id) >= MAX_TASKS_PER_USER:
+            raise TaskLimitReached()
+        task: Task = Task(**payload.model_dump(), owner_id=owner_id)
+        return await self._tasks.add(task)
+
+    async def update_task(
+        self, task_id: int, owner_id: int, payload: TaskUpdate
+    ) -> Task:
+        """
+        Apply the provided fields to an owned task.
+
+        Args:
+            task_id (int): ID of the task to update.
+            owner_id (int): ID of the authenticated user.
+            payload (TaskUpdate): Fields to modify.
+
+        Returns:
+            Task: The updated task.
+
+        Raises:
+            NotFoundError: If the task does not exist or belongs to someone else.
+            ValidationFailed: If the resulting date range is invalid.
+        """
+        task: Task | None = await self._tasks.get_owned(task_id, owner_id)
+        if task is None:
+            raise NotFoundError("Tarea no encontrada")
+
+        updates: dict[str, Any] = payload.model_dump(exclude_unset=True)
+
+        # Validate the resulting range combining stored and updated values.
+        new_start: date | None = (
+            payload.start_date if "start_date" in updates else task.start_date
+        )
+        new_end: date | None = (
+            payload.end_date if "end_date" in updates else task.end_date
+        )
+        message: str | None = date_range_error(new_start, new_end)
+        if message is not None:
+            raise ValidationFailed("end_date", message)
+
+        # Apply only allowlisted fields included in the request.
+        for field_name, value in updates.items():
+            if field_name in ALLOWED_UPDATE_FIELDS:
+                setattr(task, field_name, value)
+
+        return await self._tasks.add(task)
+
+    async def delete_task(self, task_id: int, owner_id: int) -> None:
+        """
+        Delete an owned task.
+
+        Raises:
+            NotFoundError: If the task does not exist or belongs to someone else.
+        """
+        if not await self._tasks.delete_owned(task_id, owner_id):
+            raise NotFoundError("Tarea no encontrada")

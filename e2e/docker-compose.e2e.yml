@@ -1,0 +1,68 @@
+# E2E override (TEST-09). Always used together with the real compose file:
+#
+#   docker compose -p todo-e2e -f docker-compose.yml -f e2e/docker-compose.e2e.yml up -d --build --wait
+#
+# It keeps the real images (Nginx + backend built from the same Dockerfiles)
+# and only changes what an E2E run must not share with a developer's stack:
+#   - its own project name (todo-e2e), so containers, network and images do not
+#     collide with the dev stack started with `docker compose up`;
+#   - a disposable database on tmpfs, wiped on every `down` (and on every
+#     backend stop, which flow 3 relies on);
+#   - a dummy SECRET_KEY, so no .env is needed (CI has none);
+#   - its own host port (E2E_PORT, 3100 by default) instead of 3000.
+#
+# Two extra containers (client-a, client-b) act as independent clients with
+# their own IP on the compose network, for the per-IP rate limit (flow 5).
+
+services:
+  backend:
+    # Fixed tag so the client containers can reuse the image without a pull.
+    image: todo-e2e-backend:local
+    container_name: !reset null
+    env_file: !reset []
+    environment:
+      # Dummy value, only valid for this throwaway stack.
+      SECRET_KEY: e2e-dummy-secret-not-a-real-credential-0123456789abcdefghij
+      ENVIRONMENT: production
+      DATABASE_URL: sqlite+aiosqlite:////app/data/todo.db
+      # Minimum bcrypt cost: hashing would dominate the run time otherwise.
+      BCRYPT_ROUNDS: "4"
+      LOG_LEVEL: INFO
+    volumes: !reset []
+    tmpfs:
+      - /app/data:mode=1777
+    # Same readiness probe as docker-compose.yml (ERR-05), polled faster.
+    healthcheck:
+      interval: 2s
+      retries: 30
+
+  frontend:
+    container_name: !reset null
+    ports: !override
+      - "127.0.0.1:${E2E_PORT:-3100}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  client-a: &client
+    image: todo-e2e-backend:local
+    entrypoint: ["sleep", "infinity"]
+    user: "1000:1000"
+    read_only: true
+    environment:
+      NGINX_URL: http://frontend
+    # Never pulled: it is the backend image built above (it has Python).
+    pull_policy: never
+    # Relative paths in an override resolve from the project directory
+    # (todo-backend/), not from this file.
+    volumes:
+      - ./e2e/clients:/e2e-clients:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+    # `sleep` ignores SIGTERM as PID 1; init makes `down` immediate.
+    init: true
+
+  client-b: *client

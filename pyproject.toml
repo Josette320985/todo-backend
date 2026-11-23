@@ -1,5 +1,14 @@
-# Project tooling configuration.
-# Currently only used for static type checking with mypy.
+# Project tooling configuration (mypy and pytest).
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Make "app" importable when running the plain "pytest" command (CI).
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "slow: long-running tests, excluded from the CI on every push (-m \"not slow\")",
+]
 
 [tool.mypy]
 python_version = "3.14"

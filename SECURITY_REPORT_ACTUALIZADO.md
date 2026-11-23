@@ -85,7 +85,7 @@
 ### [SEC-07] Endurecimiento de CORS y Cabeceras de Seguridad HTTP en Backend y Nginx — **CORREGIDO**
 - **Archivos modificados:** `todo-backend/app/main.py`, `todo-frontend/nginx.conf`
 - **Corrección aplicada:**
-  - En `app/main.py`: `CORSMiddleware` ahora usa `settings.CORS_ORIGINS`, `allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]` y `allow_headers=["Authorization", "Content-Type"]`, y se añadió el middleware `add_security_headers` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cache-Control: no-store`).
+  - En `app/main.py`: `CORSMiddleware` ahora usa `settings.CORS_ORIGINS`, `allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]` y `allow_headers=["Authorization", "Content-Type"]`, y se añadió el middleware `add_security_headers` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Cache-Control: no-store`).
   - En `todo-frontend/nginx.conf`: se añadió `server_tokens off;` y las cabeceras `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` y `Content-Security-Policy` (`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';`).
 
 ---

@@ -1,0 +1,37 @@
+# Keep secrets, VCS metadata, caches and local database files out of the image.
+# The app reads SECRET_KEY from the environment (docker-compose env_file), never
+# from a baked-in .env, and the SQLite database is provided by a volume.
+
+# Local environment files (the example is safe and stays for reference).
+.env
+.env.*
+!.env.example
+
+# Local database files (users, password hashes) provided by a volume instead.
+data/
+*.db
+
+# Git metadata and history.
+.git
+.gitignore
+
+# Virtual environments and Python caches.
+.venv
+venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Test and type-checking caches.
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# E2E suite (TEST-09): runs on the host against the stack, never inside the image.
+e2e/
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm

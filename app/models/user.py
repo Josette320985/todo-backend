@@ -30,6 +30,10 @@ class User(Base):
     # Store the password hash instead of the plain-text password.
     hashed_password: Mapped[str] = mapped_column(String(255))
 
+    # Embedded in every JWT ("ver" claim). Incrementing it on logout
+    # revokes all tokens previously issued to this user.
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
+
     # One-to-many relationship with tasks.
     # Deleting a user also deletes their associated tasks.
     # Orphaned tasks are automatically removed.

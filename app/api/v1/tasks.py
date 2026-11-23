@@ -1,52 +1,77 @@
 from collections.abc import Sequence
-from datetime import date
-from typing import Final
+from typing import Annotated, Final
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Result, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, Path, Query
 
-from app.api.deps import get_current_user
-from app.db.session import get_db
+from app.api.deps import get_current_user, get_task_service
+from app.utils.task_sorting import (
+    DEFAULT_SORT_ORDER,
+    DEFAULT_TASK_SORT,
+    SortOrder,
+    TaskSortField,
+)
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.task import TaskCreate, TaskRead, TaskUpdate
+from app.services.task_service import MAX_PAGE_SIZE, MAX_TASKS_PER_USER, TaskService
 
 # Router responsible for authenticated task management.
 router: Final[APIRouter] = APIRouter(prefix="/tasks", tags=["tasks"])
 
-# Allowed mutable fields on a Task ORM instance during partial updates.
-ALLOWED_UPDATE_FIELDS: Final[frozenset[str]] = frozenset(
-    {"title", "description", "completed", "start_date", "end_date"}
-)
+# SQLite stores INTEGER as a signed 64-bit value. A larger id overflows the
+# driver and would answer 500, so Path rejects it with 422 before the query
+# runs. The lower bound also rejects ids that can never exist (SEG-H06).
+TaskId = Annotated[int, Path(ge=1, le=2**63 - 1)]
 
 
 @router.get("/", response_model=list[TaskRead])
 async def list_tasks(
-    db: AsyncSession = Depends(get_db),
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = MAX_PAGE_SIZE,
+    offset: Annotated[int, Query(ge=0, le=MAX_TASKS_PER_USER)] = 0,
+    completed: Annotated[bool | None, Query()] = None,
+    sort_by: Annotated[
+        list[TaskSortField] | None, Query(max_length=len(TaskSortField))
+    ] = None,
+    order: Annotated[SortOrder, Query()] = DEFAULT_SORT_ORDER,
+    service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> Sequence[Task]:
     """
-    Retrieve all tasks belonging to the authenticated user.
+    Retrieve one page of the authenticated user's tasks (SEG-H12).
+
+    Pending tasks first, then by due date (OPT-02) unless sort_by is sent.
+    Without parameters the page is the maximum size, which is also the
+    per-user cap, so the whole list fits in it.
 
     Args:
-        db (AsyncSession): Asynchronous database session.
+        limit (int): Page size, 1 to MAX_PAGE_SIZE. Larger values are 422.
+        offset (int): Tasks to skip, 0 to MAX_TASKS_PER_USER.
+        completed (bool | None): Only pending (false) or completed (true).
+        sort_by (list[TaskSortField] | None): Repeatable, applied in the given
+            sequence: completed, end_date, start_date, title or id. Omitted
+            means the OPT-02 order (completed, end_date, id). Anything else
+            is 422. Tasks without a date always go last; id breaks ties.
+        order (SortOrder): asc or desc for every field in sort_by; ignored
+            when sort_by is omitted.
+        service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
     Returns:
-        Sequence[Task]: Tasks owned by the authenticated user.
+        Sequence[Task]: The requested page of the user's tasks.
     """
-    # Filter tasks by the authenticated user's ID.
-    result: Result[tuple[Task]] = await db.execute(
-        select(Task).where(Task.owner_id == current_user.id)
+    return await service.list_tasks(
+        current_user.id,
+        limit=limit,
+        offset=offset,
+        completed=completed,
+        sort_by=sort_by,
+        order=order,
     )
-    return result.scalars().all()
-
 
 @router.post("/", response_model=TaskRead, status_code=201)
 async def create_task(
     payload: TaskCreate,
-    db: AsyncSession = Depends(get_db),
+    service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> Task:
     """
@@ -54,108 +79,82 @@ async def create_task(
 
     Args:
         payload (TaskCreate): Data required to create the task.
-        db (AsyncSession): Asynchronous database session.
+        service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
     Returns:
         Task: The newly created task.
+
+    Raises:
+        TaskLimitReached: If the user already has the maximum number of
+            tasks (409, SEG-H12).
     """
-    # Associate the new task with the authenticated user.
-    task: Task = Task(**payload.model_dump(), owner_id=current_user.id)
-    db.add(task)
-    await db.commit()
-    await db.refresh(task)
-    return task
+    return await service.create_task(current_user.id, payload)
 
 
-@router.put("/{task_id}", response_model=TaskRead)
+@router.patch("/{task_id}", response_model=TaskRead, operation_id="patch_task")
+@router.put(
+    "/{task_id}",
+    response_model=TaskRead,
+    operation_id="put_task",
+    deprecated=True,
+)
 async def update_task(
-    task_id: int,
+    task_id: TaskId,
     payload: TaskUpdate,
-    db: AsyncSession = Depends(get_db),
+    service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> Task:
     """
-    Update an existing task belonging to the authenticated user.
+    Apply a partial update to a task belonging to the authenticated user.
+
+    PATCH is the canonical method. PUT remains a deprecated alias until the
+    frontend migrates; both run the same TaskService use case.
 
     Only allowlisted fields explicitly provided in the request are updated,
     and the resulting start/end date range is validated against existing values.
 
     Args:
-        task_id (int): ID of the task to update.
+        task_id (TaskId): ID of the task to update. It must fit SQLite's
+            signed 64-bit range (1 to 2**63 - 1).
         payload (TaskUpdate): Task fields to modify.
-        db (AsyncSession): Asynchronous database session.
+        service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
     Returns:
         Task: The updated task.
 
     Raises:
-        HTTPException: If the task is not found (404) or the resulting date
-            range is invalid (422).
+        NotFoundError: If the task does not exist or belongs to someone else (404).
+        ValidationFailed: If the resulting date range is invalid (422). It uses
+            the single error format with ``field="end_date"``.
+        RequestValidationError: If the task id is out of range or the payload
+            is invalid (422). Those errors also use the single error format.
     """
-    # Find the task and verify ownership.
-    result: Result[tuple[Task]] = await db.execute(
-        select(Task).where(Task.id == task_id, Task.owner_id == current_user.id)
-    )
-    task: Task | None = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-
-    updates: dict[str, object] = payload.model_dump(exclude_unset=True)
-
-    # Validate the resulting date range combining existing and updated values.
-    new_start: date | None = (
-        payload.start_date if "start_date" in updates else task.start_date
-    )
-    new_end: date | None = (
-        payload.end_date if "end_date" in updates else task.end_date
-    )
-    if new_start and new_end and new_end < new_start:
-        raise HTTPException(
-            status_code=422,
-            detail="La fecha de término no puede ser anterior a la fecha de inicio",
-        )
-
-    # Apply only allowlisted fields included in the request.
-    for field, value in updates.items():
-        if field in ALLOWED_UPDATE_FIELDS:
-            setattr(task, field, value)
-
-    await db.commit()
-    await db.refresh(task)
-    return task
+    return await service.update_task(task_id, current_user.id, payload)
 
 
 @router.delete("/{task_id}", status_code=204)
 async def delete_task(
-    task_id: int,
-    db: AsyncSession = Depends(get_db),
+    task_id: TaskId,
+    service: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> None:
     """
     Delete a task belonging to the authenticated user.
 
     Args:
-        task_id (int): ID of the task to delete.
-        db (AsyncSession): Asynchronous database session.
+        task_id (TaskId): ID of the task to delete. It must fit SQLite's
+            signed 64-bit range (1 to 2**63 - 1).
+        service (TaskService): Task use cases.
         current_user (User): Currently authenticated user.
 
     Returns:
         None: Successful deletion responds with HTTP 204 No Content.
 
     Raises:
-        HTTPException: If the task is not found or is not owned
+        NotFoundError: If the task does not exist or is not owned
             by the authenticated user (404).
+        RequestValidationError: If the task id is out of range (422).
     """
-    # Find the task and verify ownership before deletion.
-    result: Result[tuple[Task]] = await db.execute(
-        select(Task).where(Task.id == task_id, Task.owner_id == current_user.id)
-    )
-    task: Task | None = result.scalar_one_or_none()
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarea no encontrada")
-
-    # Delete the task and commit the transaction.
-    await db.delete(task)
-    await db.commit()
+    await service.delete_task(task_id, current_user.id)

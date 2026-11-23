@@ -21,16 +21,42 @@ services:
     expose:
       - "8000"
 
+    # Healthy only when the API can reach its database (ERR-05): readiness,
+    # not liveness. The image has no curl, so the probe uses Python.
+    # start_period covers the migrations on the first start.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      start_interval: 1s
+
   # React frontend served through Nginx.
   frontend:
     # Build the frontend image from the sibling repository.
     build: ../todo-frontend
     container_name: todo_frontend
 
-    # Map host port 3000 to Nginx port 80 inside the container.
+    # Publish Nginx only on the loopback interface (SEG-H13). It speaks plain
+    # HTTP, so binding to every interface would let anyone on the network read
+    # passwords and tokens. A real deployment puts a TLS proxy in front (see
+    # "Deploying with HTTPS" in README.md); do not change this to "3000:80".
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
 
-    # Start the backend service before starting the frontend.
+    # Start Nginx only once the backend is ready (ERR-05). Nginx resolves
+    # "backend" once at startup, and the first requests no longer get 502.
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+
+# Fixed subnet (SEG-02). The backend trusts X-Forwarded-For only from this
+# network (--forwarded-allow-ips in the Dockerfile), so it cannot be left to
+# Docker's automatic choice. Keep both values equal. If it collides with a
+# network of your machine (VPN, another project), change it in both places.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.250.250.0/24

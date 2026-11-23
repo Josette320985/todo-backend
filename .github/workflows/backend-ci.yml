@@ -1,0 +1,75 @@
+# Backend CI (TEST-10): type checking, tests with coverage and dependency audit.
+# Runs on every pull request and on pushes to the integration branches.
+name: backend-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, equipo3]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: mypy + pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Type check (mypy --strict, configured in pyproject.toml)
+        run: mypy
+
+      # Slow tests (marked @pytest.mark.slow) are excluded from every push;
+      # they run in backend-nightly.yml, together with the E2E suite (TEST-09).
+      - name: Tests with coverage
+        run: >
+          pytest -m "not slow"
+          --cov=app --cov-report=term-missing --cov-report=xml
+
+      # Gate from TEST-10: at least 80% on the layers created by the refactor
+      # (ARQ-02 repositories, ARQ-04 services). No global target on purpose.
+      - name: Coverage gate (services/ and repositories/ >= 80%)
+        run: >
+          coverage report --fail-under=80
+          --include="app/services/*,app/repositories/*"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  audit:
+    name: pip-audit (production dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # SEG-H04 (P4): starlette upgraded and python-jose replaced by PyJWT;
+    # pip-audit is clean on production dependencies, so the gate is blocking.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Audit requirements.txt
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
