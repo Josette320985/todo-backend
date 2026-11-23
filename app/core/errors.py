@@ -144,8 +144,9 @@ class InvalidCredentials(DomainError):
 class RateLimited(DomainError):
     """Too many attempts in the current window (ARQ-05).
 
-    ``retry_after`` is the whole seconds until the client may try again.
-    ERR-03 sends it in the ``Retry-After`` header.
+    ``retry_after`` is the whole seconds until the client may try again. It is
+    also sent in the ``Retry-After`` header (ERR-03), which the frontend turns
+    into the countdown.
     """
 
     status_code = 429
@@ -153,7 +154,7 @@ class RateLimited(DomainError):
     detail = "Demasiados intentos. Intenta de nuevo en un minuto."
 
     def __init__(self, retry_after: int, detail: str | None = None) -> None:
-        super().__init__(detail)
+        super().__init__(detail, headers={"Retry-After": str(retry_after)})
         self.retry_after: int = retry_after
 
 
