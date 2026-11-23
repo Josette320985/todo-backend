@@ -11,7 +11,7 @@ from app.api.deps import (
     get_register_limiter,
 )
 from app.core.config import Settings, get_settings
-from app.core.rate_limit import RateLimiter
+from app.core.rate_limit import LoginRateLimiter, RateLimiter
 from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository, get_user_repository
@@ -78,12 +78,13 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
-    limiter: RateLimiter = Depends(get_login_limiter),
+    limiter: LoginRateLimiter = Depends(get_login_limiter),
 ) -> dict[str, str]:
     """
     Authenticate a user and generate a JWT access token.
 
-    Enforces rate limiting, delegates credential verification to the
+    Enforces the failed-login limits (per IP and per IP + email: only failed
+    attempts stay counted, SEG-02), delegates credential verification to the
     authentication service, and creates the access token. The submitted
     username is normalized with the same function used at registration
     (SEG-H09), so Unicode and IDN forms match the stored email.
@@ -93,7 +94,7 @@ async def login(
         form (OAuth2PasswordRequestForm): Login credentials.
         service (AuthService): Registration and authentication use cases.
         settings (Settings): Settings of the app handling the request.
-        limiter (RateLimiter): Login limiter of the app.
+        limiter (LoginRateLimiter): Failed-login limiter of the app.
 
     Returns:
         dict[str, str]: JWT access token and token type.
@@ -103,11 +104,14 @@ async def login(
         InvalidCredentials: If the credentials are invalid (401).
     """
     client_ip: str = request.client.host if request.client else "unknown"
-    limiter.check(client_ip)
+    limiter.check(client_ip, form.username)
 
     user: User = await service.authenticate(
         form.username, form.password, client_ip
     )
+    # Reached only with valid credentials: a failure raised above and its
+    # attempt stays counted.
+    limiter.succeeded(client_ip, form.username)
     return {
         "access_token": create_access_token(
             str(user.id), user.token_version, settings

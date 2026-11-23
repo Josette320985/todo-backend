@@ -23,4 +23,11 @@ EXPOSE 8000
 
 # Start the FastAPI application using Uvicorn.
 # Listen on all network interfaces to allow external connections.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+#
+# SEG-02: behind Nginx every request comes from Nginx's own IP. With
+# --proxy-headers, Uvicorn takes the client IP from X-Forwarded-For, but only
+# when the request comes from an address in --forwarded-allow-ips. That list is
+# the compose network (a fixed subnet, declared in docker-compose.yml: keep both
+# values equal; tests/test_seg02_proxy_config.py checks it). Never use "*": any
+# client that reached the port could then forge its IP.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=10.250.250.0/24"]
