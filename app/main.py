@@ -32,6 +32,7 @@ from app.core.rate_limit import (
     MAX_REGISTER_ATTEMPTS_PER_WINDOW,
     LoginRateLimiter,
     RateLimiter,
+    rate_limit_path,
 )
 from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
@@ -263,6 +264,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "503 until it is reachable"
             )
         yield
+        for name in ("login_limiter", "register_limiter", "email_validation_limiter"):
+            getattr(app.state, name).close()
         await engine.dispose()
 
     # API docs only in development (SEG-H07). Allow-list instead of
@@ -284,22 +287,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.migrated = False
     app.state.migrate_lock = asyncio.Lock()
-    # --- rate limiter after app.state.migrate_lock ---
-    app.state.migrated = False
-    app.state.migrate_lock = asyncio.Lock()
-    # One limiter per endpoint and per app (ARQ-05): no counters are shared
-    # between apps. Tests may replace them, for example to inject a fake clock.
+    # One limiter per endpoint (ARQ-05). Their counters live in a file next to
+    # the database, so every uvicorn worker of the deployment shares them
+    # (BUG-02) while apps with different databases (tests) never do. Tests may
+    # replace them, for example to inject a fake clock.
+    limits_path: str = rate_limit_path(app_settings.DATABASE_URL)
+
+    def limiter(name: str, max_attempts: int) -> RateLimiter:
+        return RateLimiter(max_attempts=max_attempts, path=limits_path, name=name)
+
     app.state.login_limiter = LoginRateLimiter(
-        per_ip=RateLimiter(max_attempts=MAX_LOGIN_ATTEMPTS_PER_WINDOW),
-        per_pair=RateLimiter(
-            max_attempts=MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW
-        ),
+        per_ip=limiter("login_ip", MAX_LOGIN_ATTEMPTS_PER_WINDOW),
+        per_pair=limiter("login_pair", MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW),
     )
-    app.state.register_limiter = RateLimiter(
-        max_attempts=MAX_REGISTER_ATTEMPTS_PER_WINDOW
-    )
-    app.state.email_validation_limiter = RateLimiter(
-        max_attempts=MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW
+    app.state.register_limiter = limiter("register", MAX_REGISTER_ATTEMPTS_PER_WINDOW)
+    app.state.email_validation_limiter = limiter(
+        "email_validation", MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW
     )
     app.dependency_overrides[get_settings] = lambda: app_settings
     register_exception_handlers(app)
