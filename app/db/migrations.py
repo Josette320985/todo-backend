@@ -33,7 +33,20 @@ def alembic_config(connection: Connection) -> Config:
 
 
 def run_migrations(connection: Connection) -> None:
-    """Stamp pre-Alembic databases, then upgrade to the latest revision."""
+    """
+    Stamp pre-Alembic databases, then upgrade to the latest revision.
+
+    On SQLite this turns foreign key enforcement off for the connection
+    (OPT-05), as SQLite's own procedure for altering tables requires: the batch
+    migrations copy a table, drop the original and rename the copy, and with
+    enforcement on, ``DROP TABLE users`` fails while ``tasks`` still points at
+    it. The setting cannot be restored from here, because it is ignored inside
+    a transaction: the caller must not reuse the connection afterwards.
+    ``main.migrate`` discards the pool, so the next connections get the
+    PRAGMAs again from the ``connect`` listener of ``db.session``.
+    """
+    if connection.dialect.name == "sqlite":
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
     config = alembic_config(connection)
     tables = set(inspect(connection).get_table_names())
     if "users" in tables and "alembic_version" not in tables:

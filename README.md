@@ -195,7 +195,8 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 #### `app/db/` (Database)
 
 - `base.py`: Defines the SQLAlchemy declarative base class used by the database models.
-- `session.py`: Creates the asynchronous SQLAlchemy engine and session factory (SQLite with `aiosqlite`). `get_db()` opens a session from the factory of the app that received the request.
+-`session.py`: Creates the asynchronous SQLAlchemy engine and session factory (SQLite with `aiosqlite`). `get_db()` opens a session from the factory of the app that received the request. On SQLite every new connection is configured with `journal_mode=WAL`, `synchronous=NORMAL` and `foreign_keys=ON` (OPT-05). WAL adds `-wal` and `-shm` files next to the database: copy all three when you back it up.
+`get_db()` opens a session from the factory of the app that received the request.
 
 #### `app/models/` (SQLAlchemy Models)
 
