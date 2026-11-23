@@ -13,10 +13,10 @@ export function uniqueEmail(flow: string): string {
 export async function registerViaUi(page: Page, email: string, password: string = PASSWORD): Promise<void> {
   await page.goto('/');
   await page.getByRole('button', { name: /no tienes cuenta/i }).click();
-  // By type, not by label: the Form.Label elements have no controlId, so they
-  // are not linked to their inputs (accessibility gap, outside this task).
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
+  // By label, not by type: UX-05 made the email field type="text" (with
+  // inputMode="email") so it follows the backend's email rules.
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Contraseña').fill(password);
   await page.getByRole('button', { name: /registrarse/i }).click();
   await expect(page.getByRole('heading', { name: 'Mis Tareas' })).toBeVisible();
 }
