@@ -1,14 +1,31 @@
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import event
+from sqlalchemy import URL, event, make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+
+
+def sqlite_sibling_path(database_url: str | URL, suffix: str) -> Path | None:
+    """
+    A file next to the SQLite database, shared by every process that uses it.
+
+    ``data/todo.db`` with ``"rate_limit.db"`` gives ``data/todo.rate_limit.db``.
+    Returns None for an in-memory database or another engine: there is no file
+    that other processes could share.
+    """
+    url = make_url(database_url)
+    database: str | None = url.database
+    if url.get_backend_name() != "sqlite" or not database or database == ":memory:":
+        return None
+    db_file = Path(database)
+    return db_file.with_name(f"{db_file.stem}.{suffix}")
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _record: Any) -> None:

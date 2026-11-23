@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Final
@@ -34,7 +35,7 @@ from app.core.rate_limit import (
     RateLimiter,
     rate_limit_path,
 )
-from app.db.migrations import run_migrations
+from app.db.migrations import MigrationLock, run_migrations
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
 from app.models.user import User  # noqa: F401  (registers the model)
@@ -46,8 +47,9 @@ logger: Final[logging.Logger] = logging.getLogger("app.health")
 READINESS_TIMEOUT_SECONDS: Final[float] = 2.0
 
 # Failures that mean "the database is not usable right now". Anything else
-# (a broken migration script, a bug) still crashes loudly.
-DATABASE_ERRORS: Final = (SQLAlchemyError, OSError)
+# (a broken migration script, a bug) still crashes loudly. sqlite3.Error is a
+# wait for the migration lock that timed out (BUG-03).
+DATABASE_ERRORS: Final = (SQLAlchemyError, OSError, sqlite3.Error)
 
 SECURITY_HEADERS: Final[dict[str, str]] = {
     "X-Content-Type-Options": "nosniff",
@@ -159,9 +161,18 @@ class SecurityHeadersMiddleware:
 
 
 async def migrate(engine: AsyncEngine) -> None:
-    """Bring the database to the latest Alembic revision (ARQ-03)."""
-    async with engine.begin() as conn:
-        await conn.run_sync(run_migrations)
+    """Bring the database to the latest Alembic revision (ARQ-03).
+
+    One process at a time (BUG-03): the other workers wait for the lock in a
+    thread, so the event loop keeps serving /api/health meanwhile.
+    """
+    lock = MigrationLock(engine.url)
+    await asyncio.to_thread(lock.acquire)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(run_migrations)
+    finally:
+        lock.release()
     # run_migrations leaves foreign keys off on the connection it used (SQLite).
     # Closing the pooled connections makes the next ones start with the PRAGMAs
     # of the ``connect`` listener (OPT-05), foreign keys included.
