@@ -1,20 +1,11 @@
-# PERF-03: number of Uvicorn worker processes. Uvicorn reads WEB_CONCURRENCY when
-# --workers is not given, so the CMD stays free of it and the value can be
-# changed from .env / docker-compose without rebuilding. Use 2 to 4 depending on
-# the CPUs of the host (4 measured: GET /tasks 934 -> 1,687 req/s).
-# It needs OPT-05 (WAL, so that several processes can use SQLite at once).
-# KNOWN LIMIT: the login/register rate limit lives in each process's memory, so
-# the real limit is (limit x workers) until it is shared (see docs/PERF-03-*.md).
-ENV WEB_CONCURRENCY=4
-
-# Start the FastAPI application using Uvicorn.
-# Listen on all network interfaces to allow external connections.
-#
-# SEG-02: ... (sin cambios)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.28.250.0/24"]
-
 # Use a lightweight Python 3.14 image as the base.
 FROM python:3.14-slim
+
+# PERF-03: number of Uvicorn worker processes. Uvicorn reads WEB_CONCURRENCY when --workers is not given, so the CMD stays free of it and the value can be
+# changed from .env / docker-compose without rebuilding. Use 2 to 4 depending on the CPUs of the host (4 measured: GET /tasks 934 -> 1,687 req/s).
+# It needs OPT-05 (WAL, so that several processes can use SQLite at once).
+# KNOWN LIMIT: the login/register rate limit lives in each process's memory, so the real limit is (limit x workers) until it is shared (see docs/PERF-03-*.md).
+ENV WEB_CONCURRENCY=4
 
 # Set the working directory inside the container.
 WORKDIR /app
