@@ -25,6 +25,11 @@ from app.core.logging import (
     configure_logging,
     logger as request_logger,
 )
+from app.core.rate_limit import (
+    MAX_LOGIN_ATTEMPTS_PER_WINDOW,
+    MAX_REGISTER_ATTEMPTS_PER_WINDOW,
+    RateLimiter,
+)
 from app.db.migrations import run_migrations
 from app.db.session import create_engine, create_session_factory
 from app.models.task import Task  # noqa: F401  (registers the model)
@@ -272,6 +277,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.migrated = False
     app.state.migrate_lock = asyncio.Lock()
+    # --- rate limiter after app.state.migrate_lock ---
+    app.state.migrated = False
+    app.state.migrate_lock = asyncio.Lock()
+    # One limiter per endpoint and per app (ARQ-05): no counters are shared
+    # between apps. Tests may replace them, for example to inject a fake clock.
+    app.state.login_limiter = RateLimiter(
+        max_attempts=MAX_LOGIN_ATTEMPTS_PER_WINDOW
+    )
+    app.state.register_limiter = RateLimiter(
+        max_attempts=MAX_REGISTER_ATTEMPTS_PER_WINDOW
+    )
     app.dependency_overrides[get_settings] = lambda: app_settings
     register_exception_handlers(app)
     app.add_exception_handler(Exception, unhandled_exception_handler)

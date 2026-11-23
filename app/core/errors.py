@@ -141,6 +141,22 @@ class InvalidCredentials(DomainError):
     headers = {"WWW-Authenticate": "Bearer"}
 
 
+class RateLimited(DomainError):
+    """Too many attempts in the current window (ARQ-05).
+
+    ``retry_after`` is the whole seconds until the client may try again.
+    ERR-03 sends it in the ``Retry-After`` header.
+    """
+
+    status_code = 429
+    code = "rate_limit_exceeded"
+    detail = "Demasiados intentos. Intenta de nuevo en un minuto."
+
+    def __init__(self, retry_after: int, detail: str | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after: int = retry_after
+
+
 def domain_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Translate a DomainError into its JSON response."""
     error: DomainError = exc if isinstance(exc, DomainError) else DomainError()

@@ -38,7 +38,9 @@ fechas, emails) y `app/schemas/` (Pydantic de entrada y salida).
    `os.environ`. Si es inválida, el arranque termina con una línea (ERR-09).
 6. **Un error, un formato.** Toda respuesta de error sale de los handlers de
    `app/core/errors.py` (ERR-01/ERR-02), en español.
-7. **Nada sensible en logs.** Pasa por `sanitize_for_log`; nunca tokens,
+7. **Sin estado global mutable.** Los contadores del rate limiter viven en
+   `app.state`, no en el módulo: dos apps (o dos pruebas) nunca los comparten.
+8. **Nada sensible en logs.** Pasa por `sanitize_for_log`; nunca tokens,
    contraseñas ni la `SECRET_KEY`.
 
 ## Dónde va el código nuevo
@@ -54,6 +56,7 @@ fechas, emails) y `app/schemas/` (Pydantic de entrada y salida).
 | Variable de entorno | `Settings` en `app/core/config.py` + `.env.example` |
 | Middleware, CORS, headers, health | `app/main.py` (`create_app`) |
 | Hash, JWT, contraseñas | `app/core/security.py` |
+| Límite de intentos (rate limiting) | `app/core/rate_limit.py`; una instancia por endpoint en `app.state` (`create_app`) |
 | Prueba de API / servicio / regresión | `tests/api/`, `tests/services/`, `tests/security/` |
 | Prueba de punta a punta con el frontend | `e2e/` (Playwright) |
 | Decisión o evidencia de una historia | `docs/<ID>-<slug>.md` |

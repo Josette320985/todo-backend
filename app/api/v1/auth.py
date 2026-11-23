@@ -1,12 +1,16 @@
-from collections import defaultdict, deque
-import time
 from typing import Final
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.api.deps import get_auth_service, get_current_user
+from app.api.deps import (
+    get_auth_service,
+    get_current_user,
+    get_login_limiter,
+    get_register_limiter,
+)
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import RateLimiter
 from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository, get_user_repository
@@ -19,31 +23,6 @@ from app.services.auth_service import AuthService
 
 # Router responsible for user registration and authentication.
 router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
-
-# Sliding-window rate-limiting settings per client IP.
-RATE_LIMIT_WINDOW_SECONDS: Final[float] = 60.0
-MAX_LOGIN_ATTEMPTS_PER_WINDOW: Final[int] = 10
-MAX_REGISTER_ATTEMPTS_PER_WINDOW: Final[int] = 5
-
-_rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
-
-
-def _enforce_rate_limit(key: str, max_attempts: int) -> None:
-    """
-    Enforce a sliding-window rate limit for the given key.
-
-    Raises HTTP 429 Too Many Requests when the limit is exceeded.
-    """
-    now: float = time.monotonic()
-    bucket: deque[float] = _rate_limit_buckets[key]
-    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
-        bucket.popleft()
-    if len(bucket) >= max_attempts:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Demasiados intentos. Intenta de nuevo en un minuto.",
-        )
-    bucket.append(now)
 
 
 @router.post("/validate-email", response_model=EmailValidationResult)
@@ -61,6 +40,7 @@ async def register(
     request: Request,
     payload: UserCreate,
     service: AuthService = Depends(get_auth_service),
+    limiter: RateLimiter = Depends(get_register_limiter),
 ) -> User:
     """
     Register a new user in the database.
@@ -72,21 +52,20 @@ async def register(
         request (Request): Incoming HTTP request (used for rate limiting).
         payload (UserCreate): User registration data.
         service (AuthService): Registration and authentication use cases.
+        limiter (RateLimiter): Registration limiter of the app.
 
     Returns:
         User: The newly created user.
 
     Raises:
-        HTTPException: If rate limit is exceeded (429).
+        RateLimited: If the rate limit is exceeded (429).
         EmailAlreadyRegistered: If the email is already registered (400). The
             explicit message is intentional: SEG-H05 accepts email enumeration
             on registration, bounded by rate limiting and the generic login
             response.
     """
     client_ip: str = request.client.host if request.client else "unknown"
-    _enforce_rate_limit(
-        f"register:{client_ip}", MAX_REGISTER_ATTEMPTS_PER_WINDOW
-    )
+    limiter.check(client_ip)
     return await service.register(payload)
 
 
@@ -96,6 +75,7 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
+    limiter: RateLimiter = Depends(get_login_limiter),
 ) -> dict[str, str]:
     """
     Authenticate a user and generate a JWT access token.
@@ -110,16 +90,17 @@ async def login(
         form (OAuth2PasswordRequestForm): Login credentials.
         service (AuthService): Registration and authentication use cases.
         settings (Settings): Settings of the app handling the request.
+        limiter (RateLimiter): Login limiter of the app.
 
     Returns:
         dict[str, str]: JWT access token and token type.
 
     Raises:
-        HTTPException: If rate limit is exceeded (429).
+        RateLimited: If the rate limit is exceeded (429).
         InvalidCredentials: If the credentials are invalid (401).
     """
     client_ip: str = request.client.host if request.client else "unknown"
-    _enforce_rate_limit(f"login:{client_ip}", MAX_LOGIN_ATTEMPTS_PER_WINDOW)
+    limiter.check(client_ip)
 
     user: User = await service.authenticate(
         form.username, form.password, client_ip
@@ -131,10 +112,11 @@ async def login(
         "token_type": "bearer",
     }
 
-
 @router.get("/me", response_model=UserRead)
 async def read_current_user(
+    request: Request,
     current_user: User = Depends(get_current_user),
+    limiter: RateLimiter = Depends(get_login_limiter),
 ) -> User:
     """
     Return the authenticated user's public profile.
@@ -151,15 +133,29 @@ async def read_current_user(
 
     Raises:
         HTTPException: If the token is invalid, expired or revoked (401).
+        RateLimited: If the rate limit is exceeded (429).
     """
+    client_ip: str = request.client.host if request.client else "unknown"
+    limiter.check(client_ip)
+
     return current_user
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     user: User = Depends(get_current_user),
     users: UserRepository = Depends(get_user_repository),
+    limiter: RateLimiter = Depends(get_login_limiter),
 ) -> None:
-    """Revoke every token issued to the current user (all sessions)."""
+    """
+    Revoke every token issued to the current user (all sessions).
+
+    Raises:
+        RateLimited: If the rate limit is exceeded (429).
+
+    """
+    client_ip: str = request.client.host if request.client else "unknown"
+    limiter.check(client_ip)
     user.token_version += 1
     await users.add(user)

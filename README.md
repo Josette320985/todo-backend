@@ -180,14 +180,15 @@ Mark long-running tests with `@pytest.mark.slow`. Security tests and their check
 #### `app/api/` (API Endpoints)
 
 - `deps.py`: Shared API dependencies. `get_current_user()` validates JWT access tokens and retrieves the authenticated user; `get_task_service()` and `get_auth_service()` build the services on top of the request's repositories.
-- `v1/auth.py`: Authentication endpoints (`/register`, `/login` and `/me`). Applies rate limiting, delegates registration and credential verification to `AuthService`, and creates the JWT access token. `GET /me` returns `UserRead` for the authenticated user (UX-14). A duplicate email answers an explicit 400 (SEG-H05 accepts enumeration on registration; login stays generic). The login username uses the same email normalization as registration (SEG-H09).
+- `v1/auth.py`: Authentication endpoints (`/register`, `/login` and `/me`). Applies rate limiting (limiters injected from `app.state`), delegates registration and credential verification to `AuthService`, and creates the JWT access token. `GET /me` returns `UserRead` for the authenticated user (UX-14). A duplicate email answers an explicit 400 (SEG-H05 accepts enumeration on registration; login stays generic). The login username uses the same email normalization as registration (SEG-H09).
 - `v1/tasks.py`: Task CRUD endpoints. `PATCH /tasks/{id}` is the canonical partial update; `PUT` remains a deprecated alias until the frontend migrates (ARQ-09). Both delegate the business rules to `TaskService`; ownership is still enforced by the repository, so users can only access and modify their own tasks. Task ids are bounded to SQLite's signed 64-bit range (`1` to `2**63 - 1`), so an oversized id answers 422 instead of 500.
 
 #### `app/core/` (Configuration and Security)
 
 - `config.py`: Loads application settings from environment variables using Pydantic Settings. `get_settings()` (cached) is the FastAPI dependency that endpoints use; `create_app()` overrides it with the settings it receives.
 - `security.py`: Provides password hashing and verification using bcrypt, along with JWT access token generation using the configured signing algorithm (HS256 by default).
-- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`) and the handlers that translate domain errors, `RequestValidationError` and `StarletteHTTPException` to the single Spanish error format, so services never import FastAPI or build HTTP responses.
+- `errors.py`: Domain exceptions (`NotFoundError`, `ValidationFailed`, `EmailAlreadyRegistered`, `InvalidCredentials`, `RateLimited`) and the handlers that translate domain errors, `RequestValidationError` and `StarletteHTTPException` to the single Spanish error format, so services never import FastAPI or build HTTP responses.
+- `rate_limit.py`: `RateLimiter`, a sliding-window limiter with an injectable clock and a bounded number of keys. `check(key)` raises `RateLimited(retry_after)`. `create_app()` builds one limiter per endpoint (`app.state.login_limiter`, `app.state.register_limiter`) so apps and tests never share counters (ARQ-05).
 - `dates.py`: The single date-range rule (`date_range_error`) shared by the task schemas and `TaskService`.
 - `emails.py`: The single email normalization rule (SEG-H09) shared by `UserCreate` and `AuthService`; strips, validates with `email-validator`, applies Unicode/IDN normalization, and lowercases.
 

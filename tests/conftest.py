@@ -35,7 +35,6 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import create_engine, event
 
-from app.api.v1 import auth
 from app.core.config import Settings
 from app.db.migrations import run_migrations
 from app.main import create_app
@@ -105,12 +104,6 @@ def migrated_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture
 def app(settings: Settings) -> FastAPI:
     return create_app(settings)
-
-
-@pytest.fixture(autouse=True)
-def _reset_rate_limits() -> None:
-    """The rate limiter is still module-global (ARQ-05 makes it per app)."""
-    auth._rate_limit_buckets.clear()
 
 
 @pytest.fixture
