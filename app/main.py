@@ -27,8 +27,10 @@ from app.core.logging import (
 )
 from app.core.rate_limit import (
     MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW,
+    MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW,
     MAX_LOGIN_ATTEMPTS_PER_WINDOW,
     MAX_REGISTER_ATTEMPTS_PER_WINDOW,
+    LoginRateLimiter,
     RateLimiter,
 )
 from app.db.migrations import run_migrations
@@ -283,8 +285,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.migrate_lock = asyncio.Lock()
     # One limiter per endpoint and per app (ARQ-05): no counters are shared
     # between apps. Tests may replace them, for example to inject a fake clock.
-    app.state.login_limiter = RateLimiter(
-        max_attempts=MAX_LOGIN_ATTEMPTS_PER_WINDOW
+    app.state.login_limiter = LoginRateLimiter(
+        per_ip=RateLimiter(max_attempts=MAX_LOGIN_ATTEMPTS_PER_WINDOW),
+        per_pair=RateLimiter(
+            max_attempts=MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW
+        ),
     )
     app.state.register_limiter = RateLimiter(
         max_attempts=MAX_REGISTER_ATTEMPTS_PER_WINDOW

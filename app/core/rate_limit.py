@@ -24,11 +24,16 @@ from collections import OrderedDict, deque
 from collections.abc import Callable
 from typing import Final
 
+from app.core.emails import normalize_email
 from app.core.errors import RateLimited
 
 # Sliding-window settings of the auth endpoints, per client IP.
 RATE_LIMIT_WINDOW_SECONDS: Final[float] = 60.0
+# Failed logins allowed per IP, and per IP + email (SEG-02). The second one is
+# lower on purpose: it stops a guessing run against one account before the
+# whole IP budget is spent.
 MAX_LOGIN_ATTEMPTS_PER_WINDOW: Final[int] = 10
+MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW: Final[int] = 5
 MAX_REGISTER_ATTEMPTS_PER_WINDOW: Final[int] = 5
 MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW: Final[int] = 15
 
@@ -48,6 +53,12 @@ class RateLimiter:
     Every accepted call is recorded; a rejected call is not, so a blocked
     client is released ``window_seconds`` after its oldest recorded call.
 
+    * ``RateLimiter.check(key)`` raises ``RateLimited(retry_after)`` instead of an
+    ``HTTPException``; ERR-03 turns ``retry_after`` into the ``Retry-After``
+    header.
+    * ``LoginRateLimiter`` (SEG-02) counts only the failed logins, per IP and per
+    IP + email. It lives here and not in ``auth.py``.
+    
     Args:
         max_attempts (int): Calls allowed per key inside the window.
         window_seconds (float): Length of the sliding window.
@@ -110,6 +121,24 @@ class RateLimiter:
         bucket.append(now)
         self._buckets.move_to_end(key)
 
+    def forgive(self, key: str) -> None:
+        """
+        Remove the most recent call recorded for ``key``, if any.
+
+        ``check`` records the call before the work it protects runs, so
+        concurrent requests cannot all slip past the limit. Callers that only
+        want to count failures forgive the call once the work succeeded.
+        The key keeps its place in the eviction order: it is freed when it
+        reaches the front or on its next ``check``.
+        """
+        bucket: deque[float] | None = self._buckets.get(key)
+        if bucket is None:
+            return
+        if bucket:
+            bucket.pop()
+        if not bucket:
+            del self._buckets[key]
+
     def _expired(self, timestamp: float, now: float) -> bool:
         """A call leaves the window exactly ``window_seconds`` after it."""
         return now - timestamp >= self.window_seconds
@@ -127,3 +156,63 @@ class RateLimiter:
             if bucket and not self._expired(bucket[-1], now):
                 return
             del self._buckets[oldest_key]
+
+
+# Longest email kept in a key. The nginx body limit already bounds the request;
+# this bounds what one forged username can cost in memory.
+_MAX_EMAIL_KEY_LENGTH: Final[int] = 320
+
+
+def _email_key(email: str) -> str:
+    """Canonical form of a submitted username, so ``A@x.com`` and ``a@x.com`` share a counter."""
+    try:
+        canonical: str = normalize_email(email)
+    except ValueError:
+        canonical = email.strip().lower()
+    return canonical[:_MAX_EMAIL_KEY_LENGTH]
+
+
+class LoginRateLimiter:
+    """
+    Limit failed logins per IP and per IP + email (SEG-02).
+
+    ``check`` records the attempt before the credentials are verified and
+    ``succeeded`` forgives it afterwards, so only failures stay counted while
+    parallel guesses still hit the limit. A blocked attempt is not recorded in
+    either counter.
+
+    The per-email counter is keyed by the pair (IP, email) and not by the email
+    alone: otherwise anyone could lock a victim out of their account from
+    anywhere by failing logins on their email.
+
+    Args:
+        per_ip (RateLimiter): Failed logins allowed per client IP.
+        per_pair (RateLimiter): Failed logins allowed per IP + email.
+    """
+
+    def __init__(self, *, per_ip: RateLimiter, per_pair: RateLimiter) -> None:
+        self.per_ip: Final[RateLimiter] = per_ip
+        self.per_pair: Final[RateLimiter] = per_pair
+
+    def check(self, ip: str, email: str) -> None:
+        """
+        Record a login attempt or reject it.
+
+        Raises:
+            RateLimited: If the IP or the IP + email pair is over its limit.
+        """
+        self.per_ip.check(ip)
+        try:
+            self.per_pair.check(self._pair_key(ip, email))
+        except RateLimited:
+            self.per_ip.forgive(ip)
+            raise
+
+    def succeeded(self, ip: str, email: str) -> None:
+        """Forgive the attempt recorded by ``check``: the login did not fail."""
+        self.per_ip.forgive(ip)
+        self.per_pair.forgive(self._pair_key(ip, email))
+
+    @staticmethod
+    def _pair_key(ip: str, email: str) -> str:
+        return f"{ip}|{_email_key(email)}"
