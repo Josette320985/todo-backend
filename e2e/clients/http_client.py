@@ -6,7 +6,10 @@ backend image can be reused without installing anything.
 
 Usage (via `docker compose exec -T client-a python /e2e-clients/http_client.py ...`):
   register EMAIL PASSWORD
-  login EMAIL PASSWORD [--times N] [--xff VALUE]
+  login EMAIL PASSWORD [--times N] [--vary-email] [--xff VALUE]
+
+--vary-email turns EMAIL into EMAIL-0, EMAIL-1, ... (before the @), so each
+attempt is a different account and only the per-IP limit applies (SEG-02).
 
 Prints one JSON object: {"statuses": [...]} with the HTTP status of each request.
 """
@@ -41,19 +44,24 @@ def main() -> None:
     parser.add_argument("email")
     parser.add_argument("password")
     parser.add_argument("--times", type=int, default=1)
+    parser.add_argument("--vary-email", action="store_true")
     parser.add_argument("--xff", default=None)
     args = parser.parse_args()
 
     statuses: list[int] = []
-    for _ in range(args.times):
+    for attempt in range(args.times):
+        email: str = args.email
+        if args.vary_email:
+            local, _, domain = email.partition("@")
+            email = f"{local}-{attempt}@{domain}"
         if args.command == "register":
-            body = json.dumps({"email": args.email, "password": args.password})
+            body = json.dumps({"email": email, "password": args.password})
             statuses.append(
                 send("/api/v1/auth/register", body.encode(), "application/json", args.xff)
             )
         else:
             form = urllib.parse.urlencode(
-                {"username": args.email, "password": args.password}
+                {"username": email, "password": args.password}
             )
             statuses.append(
                 send(
