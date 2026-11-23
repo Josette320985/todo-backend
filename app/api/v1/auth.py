@@ -27,11 +27,13 @@ router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/validate-email", response_model=EmailValidationResult)
 async def validate_registration_email(
-    request: Request, payload: EmailValidationRequest,
+    request: Request,
+    payload: EmailValidationRequest,
+    limiter: RateLimiter = Depends(get_register_limiter),
 ) -> EmailValidationResult:
     """Validate syntax before registration, without creating or looking up users."""
     client_ip = request.client.host if request.client else "unknown"
-    _enforce_rate_limit(f"validate-email:{client_ip}", 60)
+    limiter.check(client_ip)
     return check_registration_email(payload.email)
 
 
