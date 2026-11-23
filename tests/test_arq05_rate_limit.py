@@ -12,9 +12,9 @@ from fastapi import FastAPI
 
 from app.core.config import Settings
 from app.core.errors import RateLimited
-from app.core.rate_limit import RateLimiter
+from app.core.rate_limit import LoginRateLimiter, RateLimiter
 from app.main import create_app
-from conftest import TEST_EMAIL, TEST_PASSWORD, login
+from conftest import TEST_EMAIL, TEST_PASSWORD, TestUser, login
 
 
 class FakeClock:
@@ -40,6 +40,14 @@ def make_limiter(clock: FakeClock, **options: float) -> RateLimiter:
     settings.update(options)
     return RateLimiter(  # type: ignore[arg-type]
         clock=clock, **settings
+    )
+
+
+def make_login_limiter(clock: FakeClock, max_attempts: int) -> LoginRateLimiter:
+    """The SEG-02 login limiter, with the same limit per IP and per IP + email."""
+    return LoginRateLimiter(
+        per_ip=make_limiter(clock, max_attempts=max_attempts),
+        per_pair=make_limiter(clock, max_attempts=max_attempts),
     )
 
 
@@ -198,7 +206,7 @@ def test_rate_limited_is_a_429_domain_error() -> None:
 async def test_login_is_limited_with_the_injected_clock(
     app: FastAPI, client: httpx.AsyncClient, clock: FakeClock
 ) -> None:
-    app.state.login_limiter = make_limiter(clock, max_attempts=2)
+    app.state.login_limiter = make_login_limiter(clock, max_attempts=2)
 
     assert (await login(client, TEST_EMAIL, TEST_PASSWORD)).status_code == 401
     assert (await login(client, TEST_EMAIL, TEST_PASSWORD)).status_code == 401
@@ -214,7 +222,7 @@ async def test_login_is_limited_with_the_injected_clock(
 async def test_register_and_login_use_separate_limiters(
     app: FastAPI, client: httpx.AsyncClient, clock: FakeClock
 ) -> None:
-    app.state.login_limiter = make_limiter(clock, max_attempts=1)
+    app.state.login_limiter = make_login_limiter(clock, max_attempts=1)
     await login(client)
 
     assert (await login(client)).status_code == 429
@@ -232,3 +240,20 @@ async def test_apps_do_not_share_counters(
 
     assert other_app.state.login_limiter is not app.state.login_limiter
     assert other_app.state.register_limiter is not app.state.register_limiter
+
+async def test_me_and_logout_do_not_spend_login_attempts(
+    app: FastAPI, client: httpx.AsyncClient, clock: FakeClock, user: TestUser
+) -> None:
+    """Every page load calls /me: it must not lock the user out of login."""
+    app.state.login_limiter = make_login_limiter(clock, max_attempts=2)
+
+    for _ in range(5):
+        assert (await client.get("/api/v1/auth/me", headers=user.headers)).status_code == 200
+    assert (
+        await client.post("/api/v1/auth/logout", headers=user.headers)
+    ).status_code == 204
+
+    # The two failed logins allowed are still all there.
+    assert (await login(client, TEST_EMAIL, "wrongpassword1")).status_code == 401
+    assert (await login(client, TEST_EMAIL, "wrongpassword1")).status_code == 401
+    assert (await login(client, TEST_EMAIL, "wrongpassword1")).status_code == 429

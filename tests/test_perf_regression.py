@@ -109,10 +109,6 @@ async def test_task_endpoint_query_count(
     assert count_queries.count == expected_queries, list(count_queries)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OPT-05 (sc-109) is not merged yet: remove this mark when it is",
-)
 async def test_sqlite_pragmas_are_set_on_connect(
     app: FastAPI, client: httpx.AsyncClient
 ) -> None:

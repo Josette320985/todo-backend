@@ -121,9 +121,7 @@ async def login(
 
 @router.get("/me", response_model=UserRead)
 async def read_current_user(
-    request: Request,
     current_user: User = Depends(get_current_user),
-    limiter: RateLimiter = Depends(get_login_limiter),
 ) -> User:
     """
     Return the authenticated user's public profile.
@@ -140,29 +138,20 @@ async def read_current_user(
 
     Raises:
         HTTPException: If the token is invalid, expired or revoked (401).
-        RateLimited: If the rate limit is exceeded (429).
     """
-    client_ip: str = request.client.host if request.client else "unknown"
-    limiter.check(client_ip)
-
     return current_user
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    request: Request,
     user: User = Depends(get_current_user),
     users: UserRepository = Depends(get_user_repository),
-    limiter: RateLimiter = Depends(get_login_limiter),
 ) -> None:
     """
     Revoke every token issued to the current user (all sessions).
 
-    Raises:
-        RateLimited: If the rate limit is exceeded (429).
-
+    Not rate limited: it needs a valid token, so there is nothing to guess,
+    and the login limiter counts failed logins (SEG-02), not other requests.
     """
-    client_ip: str = request.client.host if request.client else "unknown"
-    limiter.check(client_ip)
     user.token_version += 1
     await users.add(user)
