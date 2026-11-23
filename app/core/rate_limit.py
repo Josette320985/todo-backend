@@ -27,13 +27,11 @@ import sqlite3
 import time
 import weakref
 from collections.abc import Callable
-from pathlib import Path
 from typing import Final
-
-from sqlalchemy.engine import make_url
 
 from app.core.emails import normalize_email
 from app.core.errors import RateLimited
+from app.db.session import sqlite_sibling_path
 
 # Sliding-window settings of the auth endpoints, per client IP.
 RATE_LIMIT_WINDOW_SECONDS: Final[float] = 60.0
@@ -77,12 +75,8 @@ def rate_limit_path(database_url: str) -> str:
     database in ``tmp_path``) gets its own. Anything else (an in-memory
     database, another engine) keeps the counters in memory, per process.
     """
-    url = make_url(database_url)
-    database: str | None = url.database
-    if url.get_backend_name() != "sqlite" or not database or database == ":memory:":
-        return ":memory:"
-    db_file = Path(database)
-    return str(db_file.with_name(f"{db_file.stem}.rate_limit.db"))
+    path = sqlite_sibling_path(database_url, "rate_limit.db")
+    return ":memory:" if path is None else str(path)
 
 
 class RateLimiter:
