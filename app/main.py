@@ -161,6 +161,10 @@ async def migrate(engine: AsyncEngine) -> None:
     """Bring the database to the latest Alembic revision (ARQ-03)."""
     async with engine.begin() as conn:
         await conn.run_sync(run_migrations)
+    # run_migrations leaves foreign keys off on the connection it used (SQLite).
+    # Closing the pooled connections makes the next ones start with the PRAGMAs
+    # of the ``connect`` listener (OPT-05), foreign keys included.
+    await engine.dispose()
 
 
 async def health() -> dict[str, str]:
