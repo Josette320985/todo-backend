@@ -26,6 +26,7 @@ from app.core.logging import (
     logger as request_logger,
 )
 from app.core.rate_limit import (
+    MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW,
     MAX_LOGIN_ATTEMPTS_PER_WINDOW,
     MAX_REGISTER_ATTEMPTS_PER_WINDOW,
     RateLimiter,
@@ -287,6 +288,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.register_limiter = RateLimiter(
         max_attempts=MAX_REGISTER_ATTEMPTS_PER_WINDOW
+    )
+    app.state.email_validation_limiter = RateLimiter(
+        max_attempts=MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW
     )
     app.dependency_overrides[get_settings] = lambda: app_settings
     register_exception_handlers(app)

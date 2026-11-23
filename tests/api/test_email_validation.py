@@ -34,7 +34,7 @@ async def test_validation_does_not_disclose_account_existence(client: httpx.Asyn
 
 
 async def test_validation_has_separate_rate_limit(client: httpx.AsyncClient) -> None:
-    for _ in range(60):
+    for _ in range(15):
         response = await client.post("/api/v1/auth/validate-email", json={"email": "bad"})
         assert response.status_code == 200
     assert (await client.post("/api/v1/auth/validate-email", json={"email": "bad"})).status_code == 429

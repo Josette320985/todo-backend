@@ -30,6 +30,7 @@ from app.core.errors import RateLimited
 RATE_LIMIT_WINDOW_SECONDS: Final[float] = 60.0
 MAX_LOGIN_ATTEMPTS_PER_WINDOW: Final[int] = 10
 MAX_REGISTER_ATTEMPTS_PER_WINDOW: Final[int] = 5
+MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW: Final[int] = 15
 
 # Upper bound for the tracked keys of one limiter. Each key keeps at most
 # ``max_attempts`` floats, so memory stays bounded however many distinct

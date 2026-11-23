@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from app.api.deps import (
     get_auth_service,
     get_current_user,
+    get_email_validation_limiter,
     get_login_limiter,
     get_register_limiter,
 )
@@ -29,7 +30,7 @@ router: Final[APIRouter] = APIRouter(prefix="/auth", tags=["auth"])
 async def validate_registration_email(
     request: Request,
     payload: EmailValidationRequest,
-    limiter: RateLimiter = Depends(get_register_limiter),
+    limiter: RateLimiter = Depends(get_email_validation_limiter),
 ) -> EmailValidationResult:
     """Validate syntax before registration, without creating or looking up users."""
     client_ip = request.client.host if request.client else "unknown"

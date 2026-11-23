@@ -100,3 +100,8 @@ def get_register_limiter(request: Request) -> RateLimiter:
     """FastAPI dependency: the registration rate limiter of the app (ARQ-05)."""
     limiter: RateLimiter = request.app.state.register_limiter
     return limiter
+
+def get_email_validation_limiter(request: Request) -> RateLimiter:
+    """FastAPI dependency: the email validation rate limiter of the app."""
+    limiter: RateLimiter = request.app.state.email_validation_limiter
+    return limiter
