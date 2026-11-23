@@ -51,7 +51,8 @@ check say exactly the same thing.
 
 ## Tests
 
-- `pytest tests/test_error_format.py -q`: one parametrized test walks every case
+- `pytest tests/test_error_handling.py -q` (extended by TEST-05 with the 401,
+  409, 429, 500 and 503 rows): one parametrized test walks every case
   from the story table, checks the exact key set, code, detail, per-field
   messages, preserved auth header, and that no English text leaks into the
   user-facing strings.
