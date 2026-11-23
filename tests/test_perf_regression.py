@@ -4,7 +4,8 @@ TEST-06: performance regression.
 What this module pins down:
 - the number of SQL statements of each task endpoint (`count_queries`,
   after OPT-03/04);
-- the SQLite PRAGMAs of OPT-05 on every connection;
+- the SQLite PRAGMAs of OPT-05 on every connection, and that the database
+  itself now enforces the tasks.owner_id foreign key;
 - with the production bcrypt cost, /api/health keeps answering during a
   login (PERF-01). Marked `slow`; the margin is wide on purpose.
 
@@ -28,6 +29,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import Settings
 from app.main import create_app
@@ -109,10 +111,6 @@ async def test_task_endpoint_query_count(
     assert count_queries.count == expected_queries, list(count_queries)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="OPT-05 (sc-109) is not merged yet: remove this mark when it is",
-)
 async def test_sqlite_pragmas_are_set_on_connect(
     app: FastAPI, client: httpx.AsyncClient
 ) -> None:
@@ -124,6 +122,20 @@ async def test_sqlite_pragmas_are_set_on_connect(
     assert str(journal_mode).lower() == "wal"
     assert synchronous == 1  # NORMAL
     assert foreign_keys == 1
+
+
+async def test_database_enforces_the_task_owner_foreign_key(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    """foreign_keys=ON: an orphan task is rejected by SQLite, not only the ORM."""
+    async with app.state.engine.connect() as conn:
+        with pytest.raises(IntegrityError, match="FOREIGN KEY"):
+            await conn.execute(
+                text(
+                    "INSERT INTO tasks (title, completed, owner_id) "
+                    "VALUES ('huérfana', 0, 999999)"
+                )
+            )
 
 
 @asynccontextmanager
