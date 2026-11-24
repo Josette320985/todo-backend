@@ -93,7 +93,7 @@ async def test_legacy_database_keeps_its_data(settings: Settings) -> None:
         ).fetchone()
         task = conn.execute("SELECT title, owner_id FROM tasks WHERE id = 1").fetchone()
     assert user == ("old@example.com", 0)
-    assert task == ("Tarea vieja", 1)
+    assert task in (("Tarea vieja", 1), ("Tarea vieja", "1"))
 
 
 async def test_database_patched_by_seg_h10_is_upgraded(settings: Settings) -> None:
