@@ -17,10 +17,10 @@ from tests.conftest import TestUser
 TASKS_URL = "/api/v1/tasks/"
 
 
-async def create(client: httpx.AsyncClient, user: TestUser, title: str) -> int:
+async def create(client: httpx.AsyncClient, user: TestUser, title: str) -> str:
     response = await client.post(TASKS_URL, json={"title": title}, headers=user.headers)
     assert response.status_code == 201, response.text
-    task_id: int = response.json()["id"]
+    task_id: str = response.json()["id"]
     return task_id
 
 
