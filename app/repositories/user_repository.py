@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import Depends
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -13,7 +15,7 @@ class UserRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_id(self, user_id: int) -> User | None:
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
