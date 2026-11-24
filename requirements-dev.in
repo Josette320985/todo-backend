@@ -7,6 +7,7 @@ mypy==1.*
 # production dependencies by SEG-H04.
 pytest==8.*
 pytest-asyncio==0.24.*
+pytest-mock==3.*
 httpx==0.28.*
 
 # Coverage report for pytest (used by the CI, TEST-10).

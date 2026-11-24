@@ -953,6 +953,7 @@ pytest==8.4.2 \
     #   -r requirements-dev.in
     #   pytest-asyncio
     #   pytest-cov
+    #   pytest-mock
 pytest-asyncio==0.24.0 \
     --hash=sha256:a811296ed596b69bf0b6f3dc40f83bcaf341b155a269052d82efa2b25ac7037b \
     --hash=sha256:d081d828e576d85f875399194281e92bf8a68d60d72d1a2faf2feddb6c46b276
@@ -960,6 +961,10 @@ pytest-asyncio==0.24.0 \
 pytest-cov==6.3.0 \
     --hash=sha256:35c580e7800f87ce892e687461166e1ac2bcb8fb9e13aea79032518d6e503ff2 \
     --hash=sha256:440db28156d2468cafc0415b4f8e50856a0d11faefa38f30906048fe490f1749
+    # via -r requirements-dev.in
+pytest-mock==3.17.0 \
+    --hash=sha256:1b82aa4b37137248bd687055e109723debeb07b489de1565297dc9589c5f2d6b \
+    --hash=sha256:e36576e0985e01027e999891e7a966c67822d40c89ef1b4c8b6e22737e3590b4
     # via -r requirements-dev.in
 python-dotenv==1.2.4 \
     --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc \
