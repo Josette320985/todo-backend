@@ -24,7 +24,7 @@ class User(Base):
 
     # Unique identifier for each user.
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=getattr(uuid, "uuid7", uuid.uuid4)
     )
 
     # Unique email address used for authentication.
