@@ -1,4 +1,5 @@
 from typing import Any, Final
+import uuid
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -50,7 +51,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Decode the JWT and extract the numeric user ID from the subject claim.
+    # Decode the JWT and extract the user UUID from the subject claim.
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
@@ -61,7 +62,7 @@ async def get_current_user(
         raw_sub: Any = payload.get("sub")
         if not isinstance(raw_sub, str):
             raise credentials_exception
-        parsed_user_id: int = int(raw_sub)
+        parsed_user_id: uuid.UUID = uuid.UUID(raw_sub)
     except (jwt.PyJWTError, ValueError, TypeError):
         raise credentials_exception
 
