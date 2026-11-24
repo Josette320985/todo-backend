@@ -48,7 +48,7 @@ class Ctx:
 
     client: httpx.AsyncClient
     user: TestUser
-    task_id: int
+    task_id: object
 
 
 RequestFactory = Callable[[Ctx], Awaitable[httpx.Response]]
@@ -103,7 +103,7 @@ async def test_task_endpoint_query_count(
     task = await create_task(client, user.headers, title="Existente")
 
     count_queries.clear()
-    response = await make_request(Ctx(client, user, int(str(task["id"]))))
+    response = await make_request(Ctx(client, user, task["id"]))
 
     assert response.status_code == expected_status, response.text
     assert count_queries.count == expected_queries, list(count_queries)
