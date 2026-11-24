@@ -66,7 +66,7 @@ async def test_get_owned_hides_other_users_tasks(
 
     assert await repo.get_owned(task.id, user.id) is task
     assert await repo.get_owned(task.id, other_user.id) is None
-    assert await repo.get_owned(999_999, user.id) is None
+    assert await repo.get_owned(uuid.uuid4(), user.id) is None
 
 
 async def test_delete_owned(
