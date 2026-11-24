@@ -26,6 +26,7 @@ from app.core.logging import (
     configure_logging,
     logger as request_logger,
 )
+from app.core.metrics import configure_metrics
 from app.core.rate_limit import (
     MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW,
     MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW,
@@ -334,6 +335,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         RequestIdMiddleware, error_response_builder=build_unhandled_error_response
     )
+
+    # Register Prometheus HTTP metrics and /metrics before SecurityHeadersMiddleware
+    # so SecurityHeadersMiddleware remains the outermost ASGI layer.
+    if app_settings.METRICS_ENABLED:
+        configure_metrics(app)
 
     # Added last so it is the outermost middleware: the headers also reach the
     # responses built by the other middlewares. The global 500 handler lives
