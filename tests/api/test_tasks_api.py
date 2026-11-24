@@ -8,6 +8,8 @@ must keep these tests green without editing them. When a behaviour change
 is intentional, update the test in the same PR that changes it.
 """
 
+import uuid
+
 import httpx
 import pytest
 
@@ -173,7 +175,7 @@ async def test_update_missing_task_is_404(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     response = await client.put(
-        task_url(999), json={"title": "x"}, headers=auth_headers
+        task_url(uuid.uuid4()), json={"title": "x"}, headers=auth_headers
     )
     assert response.status_code == 404
 
@@ -237,8 +239,8 @@ async def test_other_user_cannot_see_update_or_delete(
     [
         ("GET", TASKS),
         ("POST", TASKS),
-        ("PUT", task_url(1)),
-        ("DELETE", task_url(1)),
+        ("PUT", task_url("00000000-0000-0000-0000-000000000001")),
+        ("DELETE", task_url("00000000-0000-0000-0000-000000000001")),
     ],
 )
 async def test_task_endpoints_without_token_are_401(
