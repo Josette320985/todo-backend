@@ -1,4 +1,5 @@
 from typing import Annotated
+import uuid
 
 from pydantic import (
     AfterValidator,
@@ -76,7 +77,7 @@ class UserRead(BaseModel):
     without exposing the stored password hash.
     """
 
-    id: int
+    id: uuid.UUID
     email: EmailStr
 
     # Allow Pydantic to read data from SQLAlchemy model attributes.
