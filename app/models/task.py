@@ -24,7 +24,7 @@ class Task(Base):
 
     # Unique identifier and task information.
     id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, primary_key=True, default=uuid.uuid4
+        Uuid, primary_key=True, default=getattr(uuid, "uuid7", uuid.uuid4)
     )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(String(1000), default=None)
