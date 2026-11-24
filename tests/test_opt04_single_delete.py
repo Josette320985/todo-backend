@@ -13,14 +13,14 @@ from tests.conftest import QueryLog, TestUser
 TASKS_URL = "/api/v1/tasks/"
 
 
-async def create_task(client: httpx.AsyncClient, owner: TestUser) -> int:
+async def create_task(client: httpx.AsyncClient, owner: TestUser) -> str:
     response = await client.post(TASKS_URL, json={"title": "t"}, headers=owner.headers)
     assert response.status_code == 201, response.text
-    task_id: int = response.json()["id"]
+    task_id: str = response.json()["id"]
     return task_id
 
 
-async def task_ids(client: httpx.AsyncClient, owner: TestUser) -> list[int]:
+async def task_ids(client: httpx.AsyncClient, owner: TestUser) -> list[str]:
     listed = (await client.get(TASKS_URL, headers=owner.headers)).json()
     return [task["id"] for task in listed]
 
