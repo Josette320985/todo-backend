@@ -7,6 +7,8 @@ codes and response shapes, not error message texts, because ERR-02 will
 change the error format on purpose.
 """
 
+import uuid
+
 import httpx
 import pytest
 
@@ -23,7 +25,7 @@ async def test_register_returns_201_with_public_fields(
     body = response.json()
     assert set(body) == {"id", "email"}
     assert body["email"] == TEST_EMAIL
-    assert isinstance(body["id"], int)
+    assert uuid.UUID(body["id"])
 
 
 async def test_register_normalizes_email(client: httpx.AsyncClient) -> None:
