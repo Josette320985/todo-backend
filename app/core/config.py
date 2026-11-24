@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Minimum level emitted by the application and uvicorn loggers.
     LOG_LEVEL: str = "INFO"
 
+    # Expose Prometheus HTTP metrics on /metrics (keep internal behind proxy).
+    METRICS_ENABLED: bool = True
+
     # Allowed CORS origins for the frontend application.
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
