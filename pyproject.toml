@@ -21,6 +21,10 @@ show_error_codes = true
 # Pydantic plugin: understands BaseModel/BaseSettings fields and validators.
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = ["ldap3", "ldap3.*", "sentry_sdk", "sentry_sdk.*"]
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
