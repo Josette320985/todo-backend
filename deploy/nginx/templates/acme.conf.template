@@ -1,0 +1,25 @@
+# Bootstrap HTTP-only configuration used before the initial Let's Encrypt
+# certificate exists. Only ACME HTTP-01 challenges and local health checks are
+# served; the application is never exposed over plain HTTP.
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    server_tokens off;
+
+    location = /nginx-health {
+        access_log off;
+        allow 127.0.0.1;
+        deny all;
+        return 200 "ok\n";
+    }
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+    location / {
+        return 503;
+    }
+}
