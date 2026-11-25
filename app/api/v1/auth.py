@@ -129,21 +129,19 @@ async def read_current_user(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    response: Response,
+    response: Response,  # <-- 1. Agrega este parámetro
     user: User = Depends(get_current_user),
     users: UserRepository = Depends(get_user_repository),
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(get_settings),  # <-- 2. Agrega este parámetro
 ) -> None:
     """
-    Revoke every token issued to the current user (all sessions) and clear
-    the HttpOnly access_token cookie.
+    Revoke every token issued to the current user (all sessions).
     """
     user.token_version += 1
     await users.add(user)
+    
+    # 3. Borra la cookie del navegador
     response.delete_cookie(
-        key="access_token",
-        path="/",
-        samesite="lax",
-        httponly=True,
-        secure=settings.ENVIRONMENT.strip().lower() == "production",
+        key=settings.AUTH_COOKIE_NAME,
+        path=settings.AUTH_COOKIE_PATH,
     )
