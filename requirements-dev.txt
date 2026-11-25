@@ -57,6 +57,7 @@ certifi==2026.11.20 \
     # via
     #   httpcore
     #   httpx
+    #   sentry-sdk
 click==8.5.1 \
     --hash=sha256:8bb5376d2006950386f8c6427613334a2acadc5f559cb80e638d00b4df957e37 \
     --hash=sha256:9bbfada76703fd1d784b83eea012e3e8c6a001a876543ef104fa56aaaeb072b4
@@ -1053,6 +1054,10 @@ pyyaml==6.0.4 \
     --hash=sha256:f5c410f9e2ffc9286279a46f2e8c107edaf3b1123510af59c828a9c15b23c9db \
     --hash=sha256:f617e4e5c619fef5284335b24e3af3a77ce08dc5c389ff4b25033bb2749032b7
     # via uvicorn
+sentry-sdk==3.0.1 \
+    --hash=sha256:f70e3b7e789e2bfbb8d5614615037ab73303647aa7f782cc442452c6289696d7 \
+    --hash=sha256:feb0c131d2e497842e968f13363ef5f065f61d2517be005328766bc00e28e4b8
+    # via -r requirements.in
 sqlalchemy==2.0.58 \
     --hash=sha256:004b0953665695f00e9c7f4f5c4a42e778477979ef5571a9321bfdd020dbce1a \
     --hash=sha256:081a1be9b42603144fd91072c00aaabe6a522f2f073b8ab41c70d70142120610 \
@@ -1142,6 +1147,10 @@ typing-inspection==0.4.5 \
     # via
     #   fastapi
     #   pydantic
+urllib3==2.8.0 \
+    --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
+    --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
+    # via sentry-sdk
 uvicorn==0.34.3 \
     --hash=sha256:16246631db62bdfbf069b0645177d6e8a77ba950cfedbfd093acef9444e4d885 \
     --hash=sha256:35919a9a979d7a59334b6b10e05d77c1d0d574c50e0fc98b8b1a0f165708b55a
