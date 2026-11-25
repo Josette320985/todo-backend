@@ -97,6 +97,8 @@ The stack is published only on `127.0.0.1:3000`, so it is reachable from this ma
 
 ## Deploying with HTTPS (required)
 
+> For the automated cloud production stack (Nginx + Let's Encrypt/Certbot, restricted ports 80/443 only, and GitHub Actions CD to GHCR + SSH), see [docs/DEPLOY-CLOUD-CD.md](docs/DEPLOY-CLOUD-CD.md).
+
 Nginx in this stack serves **plain HTTP only**. Without TLS, passwords and JWT tokens travel in clear text, so **any deployment that other people can reach must put an HTTPS proxy in front** (Caddy, Traefik, a cloud load balancer or another Nginx with a certificate). Never change the port mapping to `3000:80` or `0.0.0.0:3000:80` to "publish" the app.
 
 The proxy must:
