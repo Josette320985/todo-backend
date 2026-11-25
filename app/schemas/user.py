@@ -1,3 +1,4 @@
+import re
 from typing import Annotated
 import uuid
 
@@ -52,6 +53,9 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, value: str) -> str:
+        # Accept client-side SHA-256 hex digests (64 lowercase hex chars, 64 bytes <= 72).
+        if re.fullmatch(r"[0-9a-f]{64}", value):
+            return value
         if len(value.encode("utf-8")) > 72:
             raise ValueError(
                 "La contraseña no puede exceder 72 bytes en codificación UTF-8"
