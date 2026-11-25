@@ -5,6 +5,7 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import Response
 from pytest_mock import MockerFixture
 
 from app.api.v1 import auth as auth_router
@@ -90,7 +91,7 @@ async def test_register_endpoint_blocks_service_when_rate_limited() -> None:
     service.register.assert_not_awaited()
 
 
-async def test_login_endpoint_issues_token_and_clears_attempt_on_success(
+async def test_login_endpoint_issues_cookie_and_clears_attempt_on_success(
     mocker: MockerFixture,
 ) -> None:
     settings = _make_settings()
@@ -108,9 +109,11 @@ async def test_login_endpoint_issues_token_and_clears_attempt_on_success(
         "app.api.v1.auth.create_access_token", return_value="jwt-token-value"
     )
     form = MagicMock(username="ana@example.com", password="password123")
+    http_response = MagicMock(spec=Response)
 
-    response = await auth_router.login(
+    body = await auth_router.login(
         request=_fake_request("10.0.0.3"),
+        response=http_response,
         form=form,
         service=service,
         settings=settings,
@@ -123,7 +126,16 @@ async def test_login_endpoint_issues_token_and_clears_attempt_on_success(
     )
     limiter.succeeded.assert_called_once_with("10.0.0.3", "ana@example.com")
     token_mock.assert_called_once_with(str(user_id), 4, settings)
-    assert response == {"access_token": "jwt-token-value", "token_type": "bearer"}
+    http_response.set_cookie.assert_called_once_with(
+        key="access_token",
+        value="jwt-token-value",
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    assert body == {"detail": "Sesión iniciada"}
 
 
 async def test_login_endpoint_keeps_failed_attempt_counted_on_invalid_credentials() -> None:
@@ -132,10 +144,12 @@ async def test_login_endpoint_keeps_failed_attempt_counted_on_invalid_credential
     service = MagicMock(spec=AuthService)
     service.authenticate = AsyncMock(side_effect=InvalidCredentials())
     form = MagicMock(username="ana@example.com", password="wrong")
+    http_response = MagicMock(spec=Response)
 
     with pytest.raises(InvalidCredentials):
         await auth_router.login(
             request=_fake_request("10.0.0.4"),
+            response=http_response,
             form=form,
             service=service,
             settings=settings,
@@ -144,9 +158,11 @@ async def test_login_endpoint_keeps_failed_attempt_counted_on_invalid_credential
 
     limiter.check.assert_called_once_with("10.0.0.4", "ana@example.com")
     limiter.succeeded.assert_not_called()
+    http_response.set_cookie.assert_not_called()
 
 
 async def test_me_and_logout_endpoints() -> None:
+    settings = _make_settings()
     user = User(
         id=uuid.uuid4(),
         email="ana@example.com",
@@ -157,10 +173,20 @@ async def test_me_and_logout_endpoints() -> None:
 
     users_repo = MagicMock(spec=UserRepository)
     users_repo.add = AsyncMock(return_value=user)
-    await auth_router.logout(user=user, users=users_repo)
+    http_response = MagicMock(spec=Response)
+    await auth_router.logout(
+        response=http_response,
+        user=user,
+        users=users_repo,
+        settings=settings,
+    )
 
     assert user.token_version == 2
     users_repo.add.assert_awaited_once_with(user)
+    http_response.delete_cookie.assert_called_once_with(
+        key=settings.AUTH_COOKIE_NAME,
+        path=settings.AUTH_COOKIE_PATH,
+    )
 
 
 async def test_tasks_router_delegates_every_operation_with_uuids() -> None:
