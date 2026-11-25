@@ -80,7 +80,7 @@ async def run(
             r = await c.post("/api/v1/auth/login", data={"username": email(1), "password": PASSWORD})
             r.raise_for_status()
             print(f"login: HTTP {r.status_code} en {(time.perf_counter() - start) * 1000:.0f} ms")
-            headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+            headers = {"Authorization": f"Bearer {r.cookies['access_token']}"}
 
             print("\n## Consultas SQL por endpoint\n")
 

@@ -18,7 +18,10 @@ async def test_new_login_works_after_logout(
 ) -> None:
     await client.post("/api/v1/auth/logout", headers=auth_headers)
 
-    token = (await login(client)).json()["access_token"]
+    logged_in = await login(client)
+    assert logged_in.status_code == 200
+    token = logged_in.cookies.get("access_token", "")
+    assert token
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/v1/tasks/", headers=headers)
     assert response.status_code == 200

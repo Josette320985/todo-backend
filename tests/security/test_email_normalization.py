@@ -22,7 +22,7 @@ async def test_unicode_email_can_log_in(client: httpx.AsyncClient) -> None:
 
     response = await login(client, email=email)
     assert response.status_code == 200
-    assert response.json()["token_type"] == "bearer"
+    assert response.cookies.get("access_token")
 
 
 async def test_idn_punycode_login_matches_unicode_registration(

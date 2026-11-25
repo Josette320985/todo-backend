@@ -181,11 +181,27 @@ def server(tmp_path: Path) -> Iterator[Server]:
 
 
 def register_and_login(srv: Server, email: str) -> str:
+    from http.cookies import SimpleCookie
+
     status, text = request("POST", srv.url("/v1/auth/register"), body={"email": email, "password": PASSWORD})
     assert status == 201, text
-    status, text = srv.login(email)
-    assert status == 200, text
-    return str(json.loads(text)["access_token"])
+    data = urllib.parse.urlencode({"username": email, "password": PASSWORD}).encode()
+    req = urllib.request.Request(
+        srv.url("/v1/auth/login"),
+        data=data,
+        headers={
+            "Connection": "close",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        assert resp.status == 200
+        cookie = SimpleCookie()
+        for header in resp.headers.get_all("Set-Cookie") or []:
+            cookie.load(header)
+        assert "access_token" in cookie
+        return cookie["access_token"].value
 
 
 @pytest.mark.slow

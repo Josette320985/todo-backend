@@ -123,6 +123,7 @@ async def _method_not_allowed(ctx: Ctx) -> httpx.Response:
 
 
 async def _not_authenticated(ctx: Ctx) -> httpx.Response:
+    ctx.client.cookies.clear()
     return await ctx.client.get("/api/v1/tasks/")
 
 
