@@ -154,7 +154,7 @@ def make_user(client: httpx.AsyncClient) -> MakeUser:
             id=uuid.UUID(registered.json()["id"]),
             email=email,
             password=password,
-            token=logged_in.json()["access_token"],
+            token=logged_in.cookies.get("access_token", ""),
         )
 
     return _make_user
