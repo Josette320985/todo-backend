@@ -322,11 +322,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(OperationalError, operational_error_handler)
 
     # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
-    # Credentials are disabled: auth uses a Bearer header, not cookies.
+    # Credentials are enabled so HttpOnly cookies are sent across origins.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.CORS_ORIGINS,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
