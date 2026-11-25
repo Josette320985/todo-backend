@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sqlite3
+import sentry_sdk
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Final
@@ -253,6 +254,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Configure logging once per process, before the first record is emitted.
     configure_logging(app_settings.LOG_LEVEL)
+    
+        # Inicializar Sentry si hay un DSN configurado (F4)
+    if app_settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=app_settings.SENTRY_DSN,
+            traces_sample_rate=app_settings.SENTRY_TRACES_SAMPLE_RATE,
+            environment=app_settings.ENVIRONMENT,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
