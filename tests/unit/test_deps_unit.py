@@ -47,7 +47,14 @@ async def test_get_current_user_accepts_valid_uuid_token() -> None:
     users_repo.get_by_id = AsyncMock(return_value=user)
     token = create_access_token(str(user_id), version=2, settings=settings)
 
-    resolved = await get_current_user(token=token, users=users_repo, settings=settings)
+    fake_request = MagicMock()
+    fake_request.cookies = {}
+    resolved = await get_current_user(
+        request=fake_request,
+        bearer_token=token,
+        users=users_repo,
+        settings=settings,
+    )
 
     assert resolved is user
     users_repo.get_by_id.assert_awaited_once_with(user_id)
@@ -82,8 +89,15 @@ async def test_get_current_user_rejects_invalid_jwt_without_db_lookup(
     users_repo = MagicMock(spec=UserRepository)
     users_repo.get_by_id = AsyncMock()
 
+    fake_request = MagicMock()
+    fake_request.cookies = {}
     with pytest.raises(HTTPException) as exc:
-        await get_current_user(token=token, users=users_repo, settings=settings)
+        await get_current_user(
+            request=fake_request,
+            bearer_token=token,
+            users=users_repo,
+            settings=settings,
+        )
 
     assert exc.value.status_code == 401
     users_repo.get_by_id.assert_not_awaited()
@@ -96,8 +110,15 @@ async def test_get_current_user_rejects_wrong_signature() -> None:
     users_repo = MagicMock(spec=UserRepository)
     users_repo.get_by_id = AsyncMock()
 
+    fake_request = MagicMock()
+    fake_request.cookies = {}
     with pytest.raises(HTTPException) as exc:
-        await get_current_user(token=token, users=users_repo, settings=settings_b)
+        await get_current_user(
+            request=fake_request,
+            bearer_token=token,
+            users=users_repo,
+            settings=settings_b,
+        )
 
     assert exc.value.status_code == 401
     users_repo.get_by_id.assert_not_awaited()
@@ -110,8 +131,15 @@ async def test_get_current_user_rejects_missing_user() -> None:
     users_repo = MagicMock(spec=UserRepository)
     users_repo.get_by_id = AsyncMock(return_value=None)
 
+    fake_request = MagicMock()
+    fake_request.cookies = {}
     with pytest.raises(HTTPException) as exc:
-        await get_current_user(token=token, users=users_repo, settings=settings)
+        await get_current_user(
+            request=fake_request,
+            bearer_token=token,
+            users=users_repo,
+            settings=settings,
+        )
 
     assert exc.value.status_code == 401
     users_repo.get_by_id.assert_awaited_once_with(user_id)
@@ -130,8 +158,15 @@ async def test_get_current_user_rejects_revoked_token_version() -> None:
     users_repo = MagicMock(spec=UserRepository)
     users_repo.get_by_id = AsyncMock(return_value=user)
 
+    fake_request = MagicMock()
+    fake_request.cookies = {}
     with pytest.raises(HTTPException) as exc:
-        await get_current_user(token=token, users=users_repo, settings=settings)
+        await get_current_user(
+            request=fake_request,
+            bearer_token=token,
+            users=users_repo,
+            settings=settings,
+        )
 
     assert exc.value.status_code == 401
     users_repo.get_by_id.assert_awaited_once_with(user_id)
