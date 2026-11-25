@@ -10,12 +10,33 @@ def _read(relative_path: str) -> str:
     return (BACKEND_DIR / relative_path).read_text(encoding="utf-8")
 
 
+def _published_ports(compose: str) -> list[str]:
+    ports: list[str] = []
+    in_ports = False
+    ports_indent = 0
+    for line in compose.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if re.match(r"^\s*ports:\s*$", line):
+            in_ports = True
+            ports_indent = indent
+            continue
+        if in_ports:
+            if indent <= ports_indent:
+                in_ports = False
+            else:
+                match = re.match(r'^\s*-\s*"?([^"#]+?)"?\s*$', line)
+                if match:
+                    ports.append(match.group(1).strip())
+    return ports
+
+
 def test_prod_compose_restricts_public_ports_to_80_and_443() -> None:
     compose = _read("docker-compose.prod.yml")
 
-    # Extract all quoted port mappings ("host:container" or "ip:host:container").
-    published = re.findall(r'^\s*-\s*"([^"]+)"\s*$', compose, re.MULTILINE)
-    assert published == ["80:80", "443:443"]
+    assert _published_ports(compose) == ["80:80", "443:443"]
 
     # Frontend dev port binding from base compose must be cleared in production.
     assert "ports: !reset []" in compose
