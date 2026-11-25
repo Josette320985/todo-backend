@@ -111,6 +111,8 @@ def test_task_update_accepts_null_in_nullable_fields(field: str) -> None:
         pytest.param("a" * 71 + "1", id="72-ascii-bytes"),
         # 35 x "ñ" (2 bytes each) + "a1" = 72 bytes in 37 characters.
         pytest.param("ñ" * 35 + "a1", id="72-bytes-multibyte"),
+        # 64-char lowercase hex SHA-256 digest sent by the frontend.
+        pytest.param("a" * 64, id="sha256-hex"),
     ],
 )
 def test_user_create_accepts_valid_passwords(password: str) -> None:
