@@ -1,6 +1,6 @@
 from typing import Final
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import (
@@ -15,7 +15,6 @@ from app.core.rate_limit import LoginRateLimiter, RateLimiter
 from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository, get_user_repository
-from app.schemas.token import Token
 from app.schemas.user import (
     EmailValidationRequest, EmailValidationResult, UserCreate, UserRead,
     check_registration_email,
@@ -72,36 +71,17 @@ async def register(
     return await service.register(payload)
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 async def login(
     request: Request,
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
     limiter: LoginRateLimiter = Depends(get_login_limiter),
 ) -> dict[str, str]:
     """
-    Authenticate a user and generate a JWT access token.
-
-    Enforces the failed-login limits (per IP and per IP + email: only failed
-    attempts stay counted, SEG-02), delegates credential verification to the
-    authentication service, and creates the access token. The submitted
-    username is normalized with the same function used at registration
-    (SEG-H09), so Unicode and IDN forms match the stored email.
-
-    Args:
-        request (Request): Incoming HTTP request.
-        form (OAuth2PasswordRequestForm): Login credentials.
-        service (AuthService): Registration and authentication use cases.
-        settings (Settings): Settings of the app handling the request.
-        limiter (LoginRateLimiter): Failed-login limiter of the app.
-
-    Returns:
-        dict[str, str]: JWT access token and token type.
-
-    Raises:
-        RateLimited: If the rate limit is exceeded (429).
-        InvalidCredentials: If the credentials are invalid (401).
+    Authenticate a user and set the JWT access token in an HttpOnly cookie.
     """
     client_ip: str = request.client.host if request.client else "unknown"
     limiter.check(client_ip, form.username)
@@ -112,12 +92,17 @@ async def login(
     # Reached only with valid credentials: a failure raised above and its
     # attempt stays counted.
     limiter.succeeded(client_ip, form.username)
-    return {
-        "access_token": create_access_token(
-            str(user.id), user.token_version, settings
-        ),
-        "token_type": "bearer",
-    }
+    token: str = create_access_token(str(user.id), user.token_version, settings)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.ENVIRONMENT.strip().lower() == "production",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    return {"detail": "Sesión iniciada"}
 
 @router.get("/me", response_model=UserRead)
 async def read_current_user(
@@ -144,14 +129,21 @@ async def read_current_user(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    response: Response,
     user: User = Depends(get_current_user),
     users: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings),
 ) -> None:
     """
-    Revoke every token issued to the current user (all sessions).
-
-    Not rate limited: it needs a valid token, so there is nothing to guess,
-    and the login limiter counts failed logins (SEG-02), not other requests.
+    Revoke every token issued to the current user (all sessions) and clear
+    the HttpOnly access_token cookie.
     """
     user.token_version += 1
     await users.add(user)
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        samesite="lax",
+        httponly=True,
+        secure=settings.ENVIRONMENT.strip().lower() == "production",
+    )
