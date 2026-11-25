@@ -1,0 +1,67 @@
+# Production override (Nube 1 & Nube 3).
+# Always combine with the base compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+#
+# Changes from local dev:
+#   - Pulls prebuilt images from GHCR instead of building on the server.
+#   - Removes the localhost:3000 binding on frontend (ports: !reset []).
+#   - Keeps backend port 8000 strictly internal on the 10.250.250.0/24 network.
+#   - Publishes ONLY ports 80 and 443 via reverse-proxy (Nginx + Let's Encrypt).
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/josette320985/todo-backend:latest}
+    build: !reset null
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/josette320985/todo-frontend:latest}
+    build: !reset null
+    ports: !reset []
+    expose:
+      - "80"
+    restart: unless-stopped
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    container_name: todo_reverse_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    volumes:
+      - ./deploy/nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./deploy/nginx/templates:/etc/nginx/templates-custom:ro
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: todo_certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    depends_on:
+      reverse-proxy:
+        condition: service_healthy
+
+volumes:
+  certbot_conf:
+  certbot_www:
