@@ -17,6 +17,7 @@ import pytest
 import jwt
 
 from app.core.config import Settings
+from conftest import TestUser
 
 TASKS = "/api/v1/tasks/"
 WRONG_KEY = "another-secret-key-that-is-long-enough-1234567890"
@@ -79,7 +80,7 @@ INVALID_TOKENS: dict[str, TokenMaker] = {
     "expired": lambda key: _sign(_claims(exp=_past()), key),
     "no-sub": lambda key: _sign(_claims(sub=None), key),
     "non-numeric-sub": lambda key: _sign(_claims(sub="abc"), key),
-    "unknown-user": lambda key: _sign(_claims(sub="999"), key),
+    "unknown-user": lambda key: _sign(_claims(sub="00000000-0000-0000-0000-000000000999"), key),
     "nbf-in-future": lambda key: _sign(_claims(nbf=_future()), key),
     "tampered-payload": _tampered,
     "not-a-jwt": lambda key: "not.a.jwt",
@@ -87,9 +88,9 @@ INVALID_TOKENS: dict[str, TokenMaker] = {
 
 
 async def test_valid_token_is_accepted(
-    client: httpx.AsyncClient, auth_headers: dict[str, str], settings: Settings
+    client: httpx.AsyncClient, user: TestUser, settings: Settings
 ) -> None:
-    headers = {"Authorization": f"Bearer {_sign(_claims(), settings.SECRET_KEY)}"}
+    headers = {"Authorization": f"Bearer {_sign(_claims(sub=str(user.id)), settings.SECRET_KEY)}"}
     response = await client.get(TASKS, headers=headers)
     assert response.status_code == 200
 

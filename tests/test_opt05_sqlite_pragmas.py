@@ -117,4 +117,4 @@ async def test_legacy_database_migrates_with_foreign_keys_on(settings: Settings)
             users = (await conn.execute(text("SELECT email FROM users"))).all()
             tasks = (await conn.execute(text("SELECT title, owner_id FROM tasks"))).all()
     assert users == [("old@example.com",)]
-    assert tasks == [("Tarea vieja", 1)]
+    assert tasks in ([("Tarea vieja", 1)], [("Tarea vieja", "1")])

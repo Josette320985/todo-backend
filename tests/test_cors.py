@@ -10,10 +10,10 @@ async def _preflight(client: httpx.AsyncClient, origin: str) -> httpx.Response:
     )
 
 
-async def test_allowed_origin_without_credentials(client: httpx.AsyncClient) -> None:
+async def test_allowed_origin_with_credentials(client: httpx.AsyncClient) -> None:
     response = await _preflight(client, ALLOWED_ORIGIN)
     assert response.headers["access-control-allow-origin"] == ALLOWED_ORIGIN
-    assert "access-control-allow-credentials" not in response.headers
+    assert response.headers.get("access-control-allow-credentials") == "true"
 
 
 async def test_unknown_origin_is_rejected(client: httpx.AsyncClient) -> None:

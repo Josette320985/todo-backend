@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sqlite3
+import sentry_sdk
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Final
@@ -26,6 +27,7 @@ from app.core.logging import (
     configure_logging,
     logger as request_logger,
 )
+from app.core.metrics import configure_metrics
 from app.core.rate_limit import (
     MAX_EMAIL_VALIDATION_ATTEMPTS_PER_WINDOW,
     MAX_LOGIN_ATTEMPTS_PER_EMAIL_PER_WINDOW,
@@ -252,6 +254,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Configure logging once per process, before the first record is emitted.
     configure_logging(app_settings.LOG_LEVEL)
+    
+        # Inicializar Sentry si hay un DSN configurado (F4)
+    if app_settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=app_settings.SENTRY_DSN,
+            traces_sample_rate=app_settings.SENTRY_TRACES_SAMPLE_RATE,
+            environment=app_settings.ENVIRONMENT,
+        )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -321,11 +331,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(OperationalError, operational_error_handler)
 
     # Configure Cross-Origin Resource Sharing (CORS) with explicit methods/headers.
-    # Credentials are disabled: auth uses a Bearer header, not cookies.
+    # Credentials are enabled so HttpOnly cookies are sent across origins.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.CORS_ORIGINS,
-        allow_credentials=False,
+        allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
@@ -334,6 +344,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         RequestIdMiddleware, error_response_builder=build_unhandled_error_response
     )
+
+    # Register Prometheus HTTP metrics and /metrics before SecurityHeadersMiddleware
+    # so SecurityHeadersMiddleware remains the outermost ASGI layer.
+    if app_settings.METRICS_ENABLED:
+        configure_metrics(app)
 
     # Added last so it is the outermost middleware: the headers also reach the
     # responses built by the other middlewares. The global 500 handler lives

@@ -1,7 +1,7 @@
 from functools import lru_cache
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Self
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,31 @@ class Settings(BaseSettings):
     # Minimum level emitted by the application and uvicorn loggers.
     LOG_LEVEL: str = "INFO"
 
+    # Expose Prometheus HTTP metrics on /metrics (keep internal behind proxy).
+    METRICS_ENABLED: bool = True
+
+    # Optional LDAP directory (F1). Off by default: login stays local.
+    LDAP_ENABLED: bool = False
+    LDAP_URL: str = ""
+    LDAP_BASE_DN: str = ""
+    LDAP_BIND_DN: str = ""
+    LDAP_BIND_PASSWORD: str = ""
+    LDAP_USER_FILTER: str = "(mail={email})"
+    LDAP_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=30)
+
+    # Session cookie that replaces browser localStorage (F2).
+    AUTH_COOKIE_NAME: str = "access_token"
+    AUTH_COOKIE_PATH: str = "/"
+    AUTH_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+    # None follows ENVIRONMENT: secure only in production.
+    AUTH_COOKIE_SECURE: bool | None = None
+    CSRF_COOKIE_NAME: str = "csrf_token"
+    CSRF_HEADER_NAME: str = "X-CSRF-Token"
+
+    # Sentry (F4). Empty DSN disables the SDK.
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = Field(default=0.0, ge=0.0, le=1.0)
+
     # Allowed CORS origins for the frontend application.
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
@@ -69,6 +94,17 @@ class Settings(BaseSettings):
                 "genere uno con secrets.token_urlsafe(48)"
             )
         return stripped
+
+    @model_validator(mode="after")
+    def validate_ldap_and_cookies(self) -> Self:
+        if self.LDAP_ENABLED:
+            if not self.LDAP_URL.strip() or not self.LDAP_BASE_DN.strip():
+                raise ValueError("LDAP_ENABLED exige LDAP_URL y LDAP_BASE_DN")
+            if "{email}" not in self.LDAP_USER_FILTER:
+                raise ValueError("LDAP_USER_FILTER debe incluir el marcador {email}")
+        if self.AUTH_COOKIE_SAMESITE == "none" and self.AUTH_COOKIE_SECURE is False:
+            raise ValueError("SameSite=None exige AUTH_COOKIE_SECURE=true")
+        return self
 
     # Load environment variables from .env and ignore extra settings.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

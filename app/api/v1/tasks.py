@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from typing import Annotated, Final
+import uuid
 
 from fastapi import APIRouter, Depends, Path, Query
 
@@ -18,10 +19,8 @@ from app.services.task_service import MAX_PAGE_SIZE, MAX_TASKS_PER_USER, TaskSer
 # Router responsible for authenticated task management.
 router: Final[APIRouter] = APIRouter(prefix="/tasks", tags=["tasks"])
 
-# SQLite stores INTEGER as a signed 64-bit value. A larger id overflows the
-# driver and would answer 500, so Path rejects it with 422 before the query
-# runs. The lower bound also rejects ids that can never exist (SEG-H06).
-TaskId = Annotated[int, Path(ge=1, le=2**63 - 1)]
+# Task identifier in path parameters validated as a UUID.
+TaskId = Annotated[uuid.UUID, Path(description="ID de la tarea en formato UUID")]
 
 
 @router.get("/", response_model=list[TaskRead])

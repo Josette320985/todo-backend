@@ -131,4 +131,4 @@ async def test_login_still_works(client: httpx.AsyncClient, user: object) -> Non
     """The thread offload must not change the result of a normal login."""
     response = await login(client)
     assert response.status_code == 200
-    assert response.json()["access_token"]
+    assert response.cookies.get("access_token")

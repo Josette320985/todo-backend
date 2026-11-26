@@ -132,6 +132,14 @@ class EmailAlreadyRegistered(DomainError):
     detail = "El email ya está registrado"
 
 
+class DirectoryUnavailable(DomainError):
+    """The LDAP directory could not be queried (F1)."""
+
+    status_code = 503
+    code = "directory_unavailable"
+    detail = "El directorio de autenticación no está disponible. Intenta de nuevo."
+
+
 class InvalidCredentials(DomainError):
     """The email/password pair does not match an account."""
 

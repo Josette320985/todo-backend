@@ -1,23 +1,24 @@
 """
-TEST-04: date range of a partial update, against the stored values.
+TEST-04: Pure unit tests for date range validation on partial updates.
 
-The schema only sees the fields of the request; TaskService.update_task
-combines them with what is already saved. Each row stores a task, sends a
-partial update and checks the resulting range, or the 422 on end_date.
+TaskService.update_task combines the fields in TaskUpdate with the stored Task
+values. The TaskRepository is mocked with AsyncMock so all 18 cases run without
+opening a SQLite database.
 """
 
 from datetime import date
 from typing import Any
+import uuid
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI
 
 from app.core.dates import DATE_RANGE_ERROR
 from app.core.errors import ValidationFailed
+from app.models.task import Task
 from app.repositories.task_repository import TaskRepository
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.task import TaskUpdate
 from app.services.task_service import TaskService
-from conftest import TestUser
 
 D1 = date(2026, 11, 1)
 D5 = date(2026, 11, 5)
@@ -25,6 +26,13 @@ D10 = date(2026, 11, 10)
 D15 = date(2026, 11, 15)
 
 Dates = tuple[date | None, date | None]
+
+
+def _make_mock_service(stored_task: Task) -> tuple[TaskService, MagicMock]:
+    repo = MagicMock(spec=TaskRepository)
+    repo.get_owned = AsyncMock(return_value=stored_task)
+    repo.add = AsyncMock(side_effect=lambda task: task)
+    return TaskService(repo), repo
 
 
 @pytest.mark.parametrize(
@@ -70,47 +78,51 @@ Dates = tuple[date | None, date | None]
     ],
 )
 async def test_partial_update_checks_the_resulting_range(
-    app: FastAPI,
-    user: TestUser,
     stored: Dates,
     update: dict[str, Any],
     expected: Dates | None,
 ) -> None:
-    async with app.state.session_factory() as db:
-        service = TaskService(TaskRepository(db))
-        task = await service.create_task(
-            user.id,
-            TaskCreate(title="Con fechas", start_date=stored[0], end_date=stored[1]),
+    owner_id = uuid.uuid4()
+    task = Task(
+        id=uuid.uuid4(),
+        owner_id=owner_id,
+        title="Con fechas",
+        start_date=stored[0],
+        end_date=stored[1],
+    )
+    service, repo = _make_mock_service(task)
+    payload = TaskUpdate.model_validate(update)
+
+    if expected is None:
+        with pytest.raises(ValidationFailed) as exc:
+            await service.update_task(task.id, owner_id, payload)
+        assert exc.value.status_code == 422
+        assert [(e.field, e.message) for e in exc.value.errors] == [
+            ("end_date", DATE_RANGE_ERROR)
+        ]
+        repo.add.assert_not_awaited()
+        return
+
+    updated = await service.update_task(task.id, owner_id, payload)
+    assert (updated.start_date, updated.end_date) == expected
+    repo.add.assert_awaited_once_with(task)
+
+
+async def test_rejected_update_leaves_the_stored_dates() -> None:
+    owner_id = uuid.uuid4()
+    task = Task(
+        id=uuid.uuid4(),
+        owner_id=owner_id,
+        title="Con fechas",
+        start_date=D5,
+        end_date=D10,
+    )
+    service, repo = _make_mock_service(task)
+
+    with pytest.raises(ValidationFailed):
+        await service.update_task(
+            task.id, owner_id, TaskUpdate(title="Nuevo", end_date=D1)
         )
-        payload = TaskUpdate.model_validate(update)
 
-        if expected is None:
-            with pytest.raises(ValidationFailed) as exc:
-                await service.update_task(task.id, user.id, payload)
-            assert exc.value.status_code == 422
-            assert [(e.field, e.message) for e in exc.value.errors] == [
-                ("end_date", DATE_RANGE_ERROR)
-            ]
-            return
-
-        updated = await service.update_task(task.id, user.id, payload)
-        assert (updated.start_date, updated.end_date) == expected
-
-
-async def test_rejected_update_leaves_the_stored_dates(
-    app: FastAPI, user: TestUser
-) -> None:
-    async with app.state.session_factory() as db:
-        service = TaskService(TaskRepository(db))
-        task = await service.create_task(
-            user.id, TaskCreate(title="Con fechas", start_date=D5, end_date=D10)
-        )
-
-        with pytest.raises(ValidationFailed):
-            await service.update_task(
-                task.id, user.id, TaskUpdate(title="Nuevo", end_date=D1)
-            )
-
-    async with app.state.session_factory() as db:
-        [saved] = await TaskService(TaskRepository(db)).list_tasks(user.id)
-        assert (saved.title, saved.start_date, saved.end_date) == ("Con fechas", D5, D10)
+    repo.add.assert_not_awaited()
+    assert (task.title, task.start_date, task.end_date) == ("Con fechas", D5, D10)

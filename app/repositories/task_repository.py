@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from typing import Any, Final, cast
+import uuid
 
 from fastapi import Depends
 from sqlalchemy import ColumnElement, CursorResult, Select, delete, func, select
@@ -91,7 +92,7 @@ class TaskRepository:
 
     async def list_by_owner(
         self,
-        owner_id: int,
+        owner_id: uuid.UUID,
         limit: int | None = None,
         offset: int = 0,
         completed: bool | None = None,
@@ -122,14 +123,14 @@ class TaskRepository:
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def count_by_owner(self, owner_id: int) -> int:
+    async def count_by_owner(self, owner_id: uuid.UUID) -> int:
         """Number of tasks the user has (SEG-H12 per-user cap)."""
         result = await self.db.execute(
             select(func.count()).select_from(Task).where(Task.owner_id == owner_id)
         )
         return int(result.scalar_one())
 
-    async def get_owned(self, task_id: int, owner_id: int) -> Task | None:
+    async def get_owned(self, task_id: uuid.UUID, owner_id: uuid.UUID) -> Task | None:
         """Return the task only if it exists and belongs to owner_id."""
         result = await self.db.execute(
             select(Task).where(Task.id == task_id, Task.owner_id == owner_id)
@@ -149,7 +150,7 @@ class TaskRepository:
         await self.db.commit()
         return task
 
-    async def delete_owned(self, task_id: int, owner_id: int) -> bool:
+    async def delete_owned(self, task_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
         """
         Delete the task if it belongs to owner_id, in a single query (OPT-04).
 

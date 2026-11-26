@@ -57,9 +57,11 @@ fechas, emails) y `app/schemas/` (Pydantic de entrada y salida).
 | Error nuevo para el cliente | subclase de `DomainError` en `app/core/errors.py` |
 | Variable de entorno | `Settings` en `app/core/config.py` + `.env.example` |
 | Middleware, CORS, headers, health | `app/main.py` (`create_app`) |
+| Métricas Prometheus (`/metrics`) | `app/core/metrics.py` (registrado en `create_app`) |
 | Hash, JWT, contraseñas | `app/core/security.py` |
 | Límite de intentos (rate limiting) | `app/core/rate_limit.py`; una instancia por endpoint en `app.state` (`create_app`) |
-| Prueba de API / servicio / regresión | `tests/api/`, `tests/services/`, `tests/security/` |
+| Prueba unitaria pura (con mocks, sin BD) | `tests/services/`, `tests/unit/` |
+| Prueba de API / integración / seguridad | `tests/api/`, `tests/security/` |
 | Prueba de punta a punta con el frontend | `e2e/` (Playwright) |
 | Decisión o evidencia de una historia | `docs/<ID>-<slug>.md` |
 

@@ -29,6 +29,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import uuid
 
 import httpx
 import pytest
@@ -53,7 +54,7 @@ class TestUser:
 
     __test__ = False  # not a test class, despite the name
 
-    id: int
+    id: uuid.UUID
     email: str
     password: str
     token: str
@@ -150,10 +151,10 @@ def make_user(client: httpx.AsyncClient) -> MakeUser:
         logged_in = await login(client, email, password)
         assert logged_in.status_code == 200, logged_in.text
         return TestUser(
-            id=registered.json()["id"],
+            id=uuid.UUID(registered.json()["id"]),
             email=email,
             password=password,
-            token=logged_in.json()["access_token"],
+            token=logged_in.cookies.get("access_token", ""),
         )
 
     return _make_user

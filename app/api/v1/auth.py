@@ -1,6 +1,6 @@
 from typing import Final
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.deps import (
@@ -15,7 +15,6 @@ from app.core.rate_limit import LoginRateLimiter, RateLimiter
 from app.core.security import create_access_token
 from app.models.user import User
 from app.repositories.user_repository import UserRepository, get_user_repository
-from app.schemas.token import Token
 from app.schemas.user import (
     EmailValidationRequest, EmailValidationResult, UserCreate, UserRead,
     check_registration_email,
@@ -72,36 +71,17 @@ async def register(
     return await service.register(payload)
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 async def login(
     request: Request,
+    response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     service: AuthService = Depends(get_auth_service),
     settings: Settings = Depends(get_settings),
     limiter: LoginRateLimiter = Depends(get_login_limiter),
 ) -> dict[str, str]:
     """
-    Authenticate a user and generate a JWT access token.
-
-    Enforces the failed-login limits (per IP and per IP + email: only failed
-    attempts stay counted, SEG-02), delegates credential verification to the
-    authentication service, and creates the access token. The submitted
-    username is normalized with the same function used at registration
-    (SEG-H09), so Unicode and IDN forms match the stored email.
-
-    Args:
-        request (Request): Incoming HTTP request.
-        form (OAuth2PasswordRequestForm): Login credentials.
-        service (AuthService): Registration and authentication use cases.
-        settings (Settings): Settings of the app handling the request.
-        limiter (LoginRateLimiter): Failed-login limiter of the app.
-
-    Returns:
-        dict[str, str]: JWT access token and token type.
-
-    Raises:
-        RateLimited: If the rate limit is exceeded (429).
-        InvalidCredentials: If the credentials are invalid (401).
+    Authenticate a user and set the JWT access token in an HttpOnly cookie.
     """
     client_ip: str = request.client.host if request.client else "unknown"
     limiter.check(client_ip, form.username)
@@ -109,15 +89,29 @@ async def login(
     user: User = await service.authenticate(
         form.username, form.password, client_ip
     )
-    # Reached only with valid credentials: a failure raised above and its
-    # attempt stays counted.
     limiter.succeeded(client_ip, form.username)
-    return {
-        "access_token": create_access_token(
-            str(user.id), user.token_version, settings
-        ),
-        "token_type": "bearer",
-    }
+    
+    token: str = create_access_token(str(user.id), user.token_version, settings)
+    
+    # Lógica corregida para el flag Secure:
+    # Si AUTH_COOKIE_SECURE está definido explícitamente, usarlo.
+    # Si es None (default), usar True solo cuando ENVIRONMENT == "production".
+    secure_flag = (
+        settings.AUTH_COOKIE_SECURE
+        if settings.AUTH_COOKIE_SECURE is not None
+        else settings.ENVIRONMENT.strip().lower() == "production"
+    )
+
+    response.set_cookie(
+        key=settings.AUTH_COOKIE_NAME,          # <-- Usa tu config
+        value=token,
+        httponly=True,
+        samesite=settings.AUTH_COOKIE_SAMESITE, # <-- Usa tu config
+        secure=secure_flag,                     # <-- Lógica nueva
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path=settings.AUTH_COOKIE_PATH,         # <-- Usa tu config
+    )
+    return {"detail": "Sesión iniciada"}
 
 @router.get("/me", response_model=UserRead)
 async def read_current_user(
@@ -144,14 +138,19 @@ async def read_current_user(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    response: Response,  # <-- 1. Agrega este parámetro
     user: User = Depends(get_current_user),
     users: UserRepository = Depends(get_user_repository),
+    settings: Settings = Depends(get_settings),  # <-- 2. Agrega este parámetro
 ) -> None:
     """
     Revoke every token issued to the current user (all sessions).
-
-    Not rate limited: it needs a valid token, so there is nothing to guess,
-    and the login limiter counts failed logins (SEG-02), not other requests.
     """
     user.token_version += 1
     await users.add(user)
+    
+    # 3. Borra la cookie del navegador
+    response.delete_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        path=settings.AUTH_COOKIE_PATH,
+    )

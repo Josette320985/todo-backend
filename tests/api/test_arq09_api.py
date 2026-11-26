@@ -1,5 +1,7 @@
 """ARQ-09: coverage for PATCH task updates and the /auth/me profile endpoint."""
 
+import uuid
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -58,7 +60,7 @@ async def test_patch_missing_task_is_404(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     response = await client.patch(
-        task_url(999), json={"title": "x"}, headers=auth_headers
+        task_url(uuid.uuid4()), json={"title": "x"}, headers=auth_headers
     )
     assert response.status_code == 404
 
@@ -106,7 +108,7 @@ async def test_me_returns_public_user(
     response = await client.get(ME, headers=user.headers)
 
     assert response.status_code == 200
-    assert response.json() == {"id": user.id, "email": user.email}
+    assert response.json() == {"id": str(user.id), "email": user.email}
 
 
 async def test_me_without_token_is_401(client: httpx.AsyncClient) -> None:

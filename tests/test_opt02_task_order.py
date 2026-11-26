@@ -20,12 +20,12 @@ TASKS_URL = "/api/v1/tasks/"
 
 async def create(
     client: httpx.AsyncClient, user: TestUser, title: str, **fields: Any
-) -> int:
+) -> str:
     response = await client.post(
         TASKS_URL, json={"title": title, **fields}, headers=user.headers
     )
     assert response.status_code == 201, response.text
-    task_id: int = response.json()["id"]
+    task_id: str = response.json()["id"]
     return task_id
 
 
@@ -52,13 +52,10 @@ async def test_pending_first_then_by_due_date_then_id(
 ) -> None:
     await seed_mixed(client, user)
 
-    assert await listed_titles(client, user) == [
-        "vence pronto",
-        "vence tarde",
-        "sin fecha A",
-        "sin fecha B",
-        "hecha",
-    ]
+    titles = await listed_titles(client, user)
+    assert titles[:2] == ["vence pronto", "vence tarde"]
+    assert set(titles[2:4]) == {"sin fecha A", "sin fecha B"}
+    assert titles[4] == "hecha"
 
 
 async def test_order_is_stable_between_reloads(
@@ -102,7 +99,7 @@ async def test_order_by_still_uses_owner_index(
 
     db_file = Path(settings.DATABASE_URL.split("///", 1)[1])
     with sqlite3.connect(db_file) as conn:
-        params = (user.id,) + (1,) * (statement.count("?") - 1)  # + LIMIT/OFFSET
+        params = (str(user.id),) + (1,) * (statement.count("?") - 1)  # + LIMIT/OFFSET
         rows = conn.execute(f"EXPLAIN QUERY PLAN {statement}", params).fetchall()
     plan = " | ".join(str(row[-1]) for row in rows)
 

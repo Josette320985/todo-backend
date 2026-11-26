@@ -9,6 +9,7 @@ especially that every read and delete is scoped by owner.
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
+import uuid
 
 import httpx
 import pytest
@@ -65,7 +66,7 @@ async def test_get_owned_hides_other_users_tasks(
 
     assert await repo.get_owned(task.id, user.id) is task
     assert await repo.get_owned(task.id, other_user.id) is None
-    assert await repo.get_owned(999_999, user.id) is None
+    assert await repo.get_owned(uuid.uuid4(), user.id) is None
 
 
 async def test_delete_owned(
@@ -89,7 +90,7 @@ async def test_user_repository(session: AsyncSession, user: TestUser) -> None:
     assert by_email is not None and by_email.id == user.id
     assert await repo.get_by_id(user.id) is by_email
     assert await repo.get_by_email("nobody@example.com") is None
-    assert await repo.get_by_id(999_999) is None
+    assert await repo.get_by_id(uuid.uuid4()) is None
 
     new = await repo.add(User(email="new@example.com", hashed_password="x"))
     assert new.id is not None

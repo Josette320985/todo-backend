@@ -1,10 +1,11 @@
 """
-TEST-03 / SEG-H06: an oversized task id must not reach SQLite.
+TEST-03 / SEG-H06: an invalid task id format must not reach the database.
 
-SQLite stores INTEGER as a signed 64-bit value. A larger id makes the driver
-raise OverflowError, which used to escape as a 500. The path parameter is now
-bounded, so FastAPI rejects it with 422 before the handler runs.
+Task IDs are UUIDs. Invalid formats are rejected by FastAPI with 422 before
+the handler runs.
 """
+
+import uuid
 
 import httpx
 import pytest
@@ -12,7 +13,7 @@ import pytest
 from helpers import create_task
 
 TASKS = "/api/v1/tasks/"
-SQLITE_MAX_INTEGER = 2**63 - 1
+NON_EXISTENT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
 
 def task_url(task_id: object) -> str:
@@ -55,11 +56,11 @@ async def test_non_positive_task_id_is_422(
     assert response.status_code == 422
 
 
-async def test_max_sqlite_id_is_404_not_500(
+async def test_non_existent_uuid_is_404_not_500(
     client: httpx.AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     response = await client.put(
-        task_url(SQLITE_MAX_INTEGER), json={"title": "x"}, headers=auth_headers
+        task_url(NON_EXISTENT_UUID), json={"title": "x"}, headers=auth_headers
     )
 
     assert response.status_code == 404

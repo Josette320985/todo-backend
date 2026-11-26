@@ -139,7 +139,7 @@ def test_processes_migrating_at_once_do_not_race(tmp_path: Path) -> None:
     assert results == [""] * PROCESSES, [r for r in results if r]
     with sqlite3.connect(db_file) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0003",)
+            ("0005",)
         ]
 
 

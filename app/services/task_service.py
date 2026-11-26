@@ -9,6 +9,7 @@ checked against the values already stored, not only the ones in the request.
 from collections.abc import Sequence
 from datetime import date
 from typing import Any, Final
+import uuid
 
 from app.core.dates import date_range_error
 from app.core.errors import NotFoundError, TaskLimitReached, ValidationFailed
@@ -42,7 +43,7 @@ class TaskService:
 
     async def list_tasks(
         self,
-        owner_id: int,
+        owner_id: uuid.UUID,
         limit: int | None = None,
         offset: int = 0,
         completed: bool | None = None,
@@ -68,7 +69,7 @@ class TaskService:
             order=order,
         )
 
-    async def create_task(self, owner_id: int, payload: TaskCreate) -> Task:
+    async def create_task(self, owner_id: uuid.UUID, payload: TaskCreate) -> Task:
         """
         Create a task for the user.
 
@@ -81,14 +82,14 @@ class TaskService:
         return await self._tasks.add(task)
 
     async def update_task(
-        self, task_id: int, owner_id: int, payload: TaskUpdate
+        self, task_id: uuid.UUID, owner_id: uuid.UUID, payload: TaskUpdate
     ) -> Task:
         """
         Apply the provided fields to an owned task.
 
         Args:
-            task_id (int): ID of the task to update.
-            owner_id (int): ID of the authenticated user.
+            task_id (uuid.UUID): ID of the task to update.
+            owner_id (uuid.UUID): ID of the authenticated user.
             payload (TaskUpdate): Fields to modify.
 
         Returns:
@@ -122,7 +123,7 @@ class TaskService:
 
         return await self._tasks.add(task)
 
-    async def delete_task(self, task_id: int, owner_id: int) -> None:
+    async def delete_task(self, task_id: uuid.UUID, owner_id: uuid.UUID) -> None:
         """
         Delete an owned task.
 

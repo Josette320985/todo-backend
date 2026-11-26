@@ -10,6 +10,7 @@ orders of magnitude faster than going through the API.
 import secrets
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 # Make `app` importable when a script runs as `python scripts/perf/<name>.py`
@@ -23,6 +24,10 @@ from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import create_app  # noqa: E402
 
 PASSWORD: str = "Password123"
+
+
+def user_uuid(user_id: int) -> uuid.UUID:
+    return uuid.UUID(int=user_id)
 
 
 def email(user_id: int) -> str:
@@ -62,19 +67,25 @@ def seed(
     User 1 gets `first_user_tasks` tasks when given, so one user can have a
     realistic list while the table is large. Returns the number of tasks.
     """
+    uuid_gen = getattr(uuid, "uuid7", uuid.uuid4)
     hashed: str = hash_password(PASSWORD, settings.BCRYPT_ROUNDS)
-    rows: list[tuple[str, bool, int]] = []
+    rows: list[tuple[str, str, bool, str]] = []
     for user_id in range(1, users + 1):
         count = first_user_tasks if (user_id == 1 and first_user_tasks is not None) else tasks_per_user
-        rows += [(f"Tarea {user_id}-{k}", k % 3 == 0, user_id) for k in range(count)]
+        u_hex = user_uuid(user_id).hex
+        rows += [
+            (uuid_gen().hex, f"Tarea {user_id}-{k}", k % 3 == 0, u_hex)
+            for k in range(count)
+        ]
     con = sqlite3.connect(db)
     try:
         con.executemany(
             "INSERT INTO users (id, email, hashed_password, token_version) VALUES (?, ?, ?, 0)",
-            [(i, email(i), hashed) for i in range(1, users + 1)],
+            [(user_uuid(i).hex, email(i), hashed) for i in range(1, users + 1)],
         )
         con.executemany(
-            "INSERT INTO tasks (title, completed, owner_id) VALUES (?, ?, ?)", rows
+            "INSERT INTO tasks (id, title, completed, owner_id) VALUES (?, ?, ?, ?)",
+            rows,
         )
         con.commit()
     finally:
@@ -84,4 +95,4 @@ def seed(
 
 def token(user_id: int, settings: Settings) -> str:
     """A valid access token for a seeded user (token_version 0)."""
-    return create_access_token(str(user_id), 0, settings)
+    return create_access_token(str(user_uuid(user_id)), 0, settings)

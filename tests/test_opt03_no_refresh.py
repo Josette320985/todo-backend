@@ -8,6 +8,8 @@ authentication dependency). Since SEG-H12, POST adds one COUNT for the
 per-user cap, before the INSERT.
 """
 
+import uuid
+
 import httpx
 
 from tests.conftest import QueryLog, TestUser
@@ -29,7 +31,7 @@ async def test_post_returns_generated_values_without_refresh(
 
     assert response.status_code == 201, response.text
     body = response.json()
-    assert isinstance(body["id"], int) and body["id"] > 0
+    assert uuid.UUID(body["id"])
     assert body["completed"] is False
     assert body["title"] == "Sin refresh"
     assert body["description"] is None

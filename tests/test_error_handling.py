@@ -113,7 +113,9 @@ async def _not_found(ctx: Ctx) -> httpx.Response:
 
 
 async def _task_not_found(ctx: Ctx) -> httpx.Response:
-    return await ctx.client.delete("/api/v1/tasks/999999", headers=ctx.headers)
+    return await ctx.client.delete(
+        "/api/v1/tasks/00000000-0000-0000-0000-000000000000", headers=ctx.headers
+    )
 
 
 async def _method_not_allowed(ctx: Ctx) -> httpx.Response:
@@ -121,6 +123,7 @@ async def _method_not_allowed(ctx: Ctx) -> httpx.Response:
 
 
 async def _not_authenticated(ctx: Ctx) -> httpx.Response:
+    ctx.client.cookies.clear()
     return await ctx.client.get("/api/v1/tasks/")
 
 
@@ -148,7 +151,7 @@ async def _seg_h05(ctx: Ctx) -> httpx.Response:
 
 async def _seg_h06(ctx: Ctx) -> httpx.Response:
     return await ctx.client.patch(
-        f"/api/v1/tasks/{2**63}", json={"title": "x"}, headers=ctx.headers
+        "/api/v1/tasks/not-a-uuid", json={"title": "x"}, headers=ctx.headers
     )
 
 
@@ -319,8 +322,8 @@ async def _database_down(ctx: Ctx) -> httpx.Response:
             _seg_h06,
             422,
             "validation_error",
-            "El id de la tarea debe ser menor o igual que",
-            (("task_id", "debe ser menor o igual que"),),
+            "El id de la tarea no es válido",
+            (("task_id", "no es válido"),),
             {},
             id="seg_h06_task_id_bounds",
         ),

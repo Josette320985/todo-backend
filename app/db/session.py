@@ -1,6 +1,8 @@
 from collections.abc import AsyncGenerator
 from pathlib import Path
+import sqlite3
 from typing import Any
+import uuid
 
 from fastapi import Request
 from sqlalchemy import URL, event, make_url
@@ -10,6 +12,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+
+sqlite3.register_adapter(uuid.UUID, lambda u: u.hex)
 
 
 def sqlite_sibling_path(database_url: str | URL, suffix: str) -> Path | None:

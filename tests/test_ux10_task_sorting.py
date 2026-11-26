@@ -18,12 +18,12 @@ PENDING_FIRST = ["completed", "end_date", "id"]
 
 async def create(
     client: httpx.AsyncClient, user: TestUser, title: str, **fields: Any
-) -> int:
+) -> str:
     response = await client.post(
         TASKS_URL, json={"title": title, **fields}, headers=user.headers
     )
     assert response.status_code == 201, response.text
-    task_id: int = response.json()["id"]
+    task_id: str = response.json()["id"]
     return task_id
 
 

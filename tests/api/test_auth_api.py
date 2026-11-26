@@ -7,6 +7,8 @@ codes and response shapes, not error message texts, because ERR-02 will
 change the error format on purpose.
 """
 
+import uuid
+
 import httpx
 import pytest
 
@@ -23,7 +25,7 @@ async def test_register_returns_201_with_public_fields(
     body = response.json()
     assert set(body) == {"id", "email"}
     assert body["email"] == TEST_EMAIL
-    assert isinstance(body["id"], int)
+    assert uuid.UUID(body["id"])
 
 
 async def test_register_normalizes_email(client: httpx.AsyncClient) -> None:
@@ -58,15 +60,16 @@ async def test_register_weak_password_is_422(
     assert response.status_code == 422
 
 
-async def test_login_returns_bearer_token(client: httpx.AsyncClient) -> None:
+async def test_login_sets_httponly_cookie(client: httpx.AsyncClient) -> None:
     await register(client, TEST_EMAIL, TEST_PASSWORD)
 
     response = await login(client)
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["token_type"] == "bearer"
-    assert isinstance(body["access_token"], str) and body["access_token"]
+    assert "access_token" not in response.json()
+    cookie_header = response.headers.get("set-cookie", "").lower()
+    assert "access_token=" in cookie_header
+    assert "httponly" in cookie_header
 
 
 async def test_login_email_is_case_insensitive(client: httpx.AsyncClient) -> None:

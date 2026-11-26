@@ -1,7 +1,8 @@
 
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String
+from sqlalchemy import String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -22,13 +23,21 @@ class User(Base):
     __tablename__ = "users"
 
     # Unique identifier for each user.
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=getattr(uuid, "uuid7", uuid.uuid4)
+    )
 
     # Unique email address used for authentication.
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
 
     # Store the password hash instead of the plain-text password.
     hashed_password: Mapped[str] = mapped_column(String(255))
+
+    # "local" checks bcrypt. "ldap" checks the directory and keeps a random
+    # hash so the password column stays non-null (F1).
+    auth_provider: Mapped[str] = mapped_column(
+        String(16), default="local", server_default="local"
+    )
 
     # Embedded in every JWT ("ver" claim). Incrementing it on logout
     # revokes all tokens previously issued to this user.

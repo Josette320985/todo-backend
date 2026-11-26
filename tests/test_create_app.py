@@ -49,7 +49,8 @@ async def token_for(client: httpx.AsyncClient) -> str:
         "/api/v1/auth/login",
         data={"username": CREDENTIALS["email"], "password": CREDENTIALS["password"]},
     )
-    token: str = response.json()["access_token"]
+    token: str = response.cookies.get("access_token", "")
+    assert token
     return token
 
 

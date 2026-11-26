@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Self
+import uuid
 
 from pydantic import (
     BaseModel,
@@ -88,7 +89,7 @@ class TaskRead(BaseModel):
     and completion status.
     """
 
-    id: int
+    id: uuid.UUID
     title: str
     description: str | None
     completed: bool
