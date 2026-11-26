@@ -89,18 +89,27 @@ async def login(
     user: User = await service.authenticate(
         form.username, form.password, client_ip
     )
-    # Reached only with valid credentials: a failure raised above and its
-    # attempt stays counted.
     limiter.succeeded(client_ip, form.username)
+    
     token: str = create_access_token(str(user.id), user.token_version, settings)
+    
+    # Lógica corregida para el flag Secure:
+    # Si AUTH_COOKIE_SECURE está definido explícitamente, usarlo.
+    # Si es None (default), usar True solo cuando ENVIRONMENT == "production".
+    secure_flag = (
+        settings.AUTH_COOKIE_SECURE
+        if settings.AUTH_COOKIE_SECURE is not None
+        else settings.ENVIRONMENT.strip().lower() == "production"
+    )
+
     response.set_cookie(
-        key="access_token",
+        key=settings.AUTH_COOKIE_NAME,          # <-- Usa tu config
         value=token,
         httponly=True,
-        samesite="lax",
-        secure=settings.ENVIRONMENT.strip().lower() == "production",
+        samesite=settings.AUTH_COOKIE_SAMESITE, # <-- Usa tu config
+        secure=secure_flag,                     # <-- Lógica nueva
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
+        path=settings.AUTH_COOKIE_PATH,         # <-- Usa tu config
     )
     return {"detail": "Sesión iniciada"}
 
